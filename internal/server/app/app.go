@@ -11,11 +11,14 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -25,12 +28,14 @@ import (
 	"github.com/thenickstrick/go-natlas/internal/config"
 	"github.com/thenickstrick/go-natlas/internal/server/data"
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver"
+	"github.com/thenickstrick/go-natlas/internal/server/scope"
 )
 
 // App owns every long-lived resource the server holds open.
 type App struct {
 	cfg     *config.Server
 	store   data.Store
+	scope   *scope.ScopeManager
 	os      *opensearch.Client
 	s3      *minio.Client
 	httpSrv *http.Server
@@ -45,6 +50,10 @@ func New(ctx context.Context, cfg *config.Server) (*App, error) {
 		a.close()
 		return nil, err
 	}
+	if err := a.initScope(ctx); err != nil {
+		a.close()
+		return nil, err
+	}
 	if err := a.initOpenSearch(ctx); err != nil {
 		a.close()
 		return nil, err
@@ -56,6 +65,7 @@ func New(ctx context.Context, cfg *config.Server) (*App, error) {
 
 	a.httpSrv = httpserver.New(cfg, httpserver.Deps{
 		Store:      a.store,
+		Scope:      a.scope,
 		OpenSearch: a.os,
 		S3:         a.s3,
 	})
@@ -108,6 +118,64 @@ func (a *App) initStore(ctx context.Context) error {
 	}
 	a.store = store
 	return nil
+}
+
+// initScope builds the scope manager, wires its cycle-complete callback into
+// the scope_log table, and performs the initial load from the store. An empty
+// scope is accepted — the agent API will simply 404 getwork until scope is
+// populated via the admin routes.
+func (a *App) initScope(ctx context.Context) error {
+	seed, err := resolveScanSeed(a.cfg.ScanSeedHex)
+	if err != nil {
+		return fmt.Errorf("scan seed: %w", err)
+	}
+	mgr, err := scope.NewScopeManager(seed)
+	if err != nil {
+		return fmt.Errorf("scope manager: %w", err)
+	}
+	mgr.SetOnCycleComplete(func(ctx context.Context, msg string) {
+		if err := a.store.ScopeLogAppend(ctx, msg); err != nil {
+			slog.ErrorContext(ctx, "scope_log append", "err", err)
+		}
+	})
+
+	items, err := a.store.ScopeItemListAll(ctx)
+	if err != nil {
+		return fmt.Errorf("scope load: %w", err)
+	}
+	entries := make([]scope.Entry, len(items))
+	for i, it := range items {
+		entries[i] = scope.Entry{CIDR: it.CIDR, IsBlacklist: it.IsBlacklist}
+	}
+	if err := mgr.Load(entries); err != nil {
+		return fmt.Errorf("scope load: %w", err)
+	}
+	a.scope = mgr
+
+	wl, bl := mgr.Sizes()
+	slog.InfoContext(ctx, "scope loaded", "whitelist", wl, "blacklist", bl, "items", len(items))
+	return nil
+}
+
+// resolveScanSeed returns the 32-byte key for the Permutation. A hex-encoded
+// value from config overrides the default; empty input means generate a fresh
+// random seed for this process lifetime.
+func resolveScanSeed(hexSeed string) ([]byte, error) {
+	if s := strings.TrimSpace(hexSeed); s != "" {
+		b, err := hex.DecodeString(s)
+		if err != nil {
+			return nil, fmt.Errorf("SCAN_SEED_HEX must be hex: %w", err)
+		}
+		if len(b) < 8 {
+			return nil, fmt.Errorf("SCAN_SEED_HEX must decode to at least 8 bytes (got %d)", len(b))
+		}
+		return b, nil
+	}
+	seed := make([]byte, 32)
+	if _, err := rand.Read(seed); err != nil {
+		return nil, fmt.Errorf("read random seed: %w", err)
+	}
+	return seed, nil
 }
 
 func (a *App) initOpenSearch(ctx context.Context) error {

@@ -19,11 +19,13 @@ import (
 
 	"github.com/thenickstrick/go-natlas/internal/config"
 	"github.com/thenickstrick/go-natlas/internal/server/data"
+	"github.com/thenickstrick/go-natlas/internal/server/scope"
 )
 
 // Deps is the dependency handle shared by every handler.
 type Deps struct {
 	Store      data.Store
+	Scope      *scope.ScopeManager
 	OpenSearch *opensearch.Client
 	S3         *minio.Client
 }

@@ -67,6 +67,13 @@ type Server struct {
 	LogLevel  string `envconfig:"LOG_LEVEL" default:"info"`
 	LogFormat string `envconfig:"LOG_FORMAT" default:"json"`
 
+	// ScanSeedHex controls the cycle-walking PRP used to order scan targets.
+	// Empty (default) => a random 32-byte seed is generated at startup, so
+	// each restart reshuffles the order. Any non-empty hex string (16–64 hex
+	// chars) produces a deterministic, repeatable order — useful for tests
+	// and for operators who want scan ordering to survive restarts.
+	ScanSeedHex string `envconfig:"SCAN_SEED_HEX"`
+
 	Postgres    Postgres
 	SQLite      SQLite
 	OpenSearch  OpenSearch
