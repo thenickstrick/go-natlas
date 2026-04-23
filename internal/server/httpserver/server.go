@@ -19,6 +19,8 @@ import (
 
 	"github.com/thenickstrick/go-natlas/internal/config"
 	"github.com/thenickstrick/go-natlas/internal/server/data"
+	"github.com/thenickstrick/go-natlas/internal/server/httpserver/api"
+	"github.com/thenickstrick/go-natlas/internal/server/httpserver/auth"
 	"github.com/thenickstrick/go-natlas/internal/server/scope"
 )
 
@@ -40,6 +42,17 @@ func New(cfg *config.Server, deps Deps) *http.Server {
 
 	r.Get("/healthz", healthz())
 	r.Get("/readyz", readyz(deps))
+
+	// /api/v1 — agent-facing endpoints. Auth is middleware-gated; when
+	// AGENT_AUTH_REQUIRED is false (dev default in compose) the middleware
+	// is a pass-through so running `natlas-agent` locally needs no DB seed.
+	handlers := &api.Handlers{Store: deps.Store, Scope: deps.Scope}
+	r.Route("/api/v1", func(apiR chi.Router) {
+		apiR.Use(auth.AgentAuth(deps.Store, cfg.AgentAuthRequired))
+		apiR.Get("/work", handlers.GetWork)
+		apiR.Post("/results", handlers.PostResults)
+		apiR.Get("/services", handlers.GetServices)
+	})
 
 	// otelhttp wraps the whole mux so every request produces a span. It is a
 	// no-op when the tracer provider is the OTel default (no-op) provider.

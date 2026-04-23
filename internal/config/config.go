@@ -74,6 +74,11 @@ type Server struct {
 	// and for operators who want scan ordering to survive restarts.
 	ScanSeedHex string `envconfig:"SCAN_SEED_HEX"`
 
+	// AgentAuthRequired gates the /api/v1 middleware. Default true (safe);
+	// dev compose sets it false so agents can talk to the server without a
+	// DB-registered identity.
+	AgentAuthRequired bool `envconfig:"AGENT_AUTH_REQUIRED" default:"true"`
+
 	Postgres    Postgres
 	SQLite      SQLite
 	OpenSearch  OpenSearch
