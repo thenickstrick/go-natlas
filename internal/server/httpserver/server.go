@@ -7,25 +7,23 @@
 package httpserver
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
 	"github.com/opensearch-project/opensearch-go/v4"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/thenickstrick/go-natlas/internal/config"
+	"github.com/thenickstrick/go-natlas/internal/server/data"
 )
 
 // Deps is the dependency handle shared by every handler.
 type Deps struct {
-	Postgres   *pgxpool.Pool // nil if SQLite is configured
-	SQLite     *sql.DB       // nil if Postgres is configured
+	Store      data.Store
 	OpenSearch *opensearch.Client
 	S3         *minio.Client
 }
@@ -41,9 +39,8 @@ func New(cfg *config.Server, deps Deps) *http.Server {
 	r.Get("/healthz", healthz())
 	r.Get("/readyz", readyz(deps))
 
-	// otelhttp wraps the whole mux so every request produces a span whose
-	// attributes include http.route, http.method, etc. It is a no-op when the
-	// tracer provider is the OTel default (no-op) provider.
+	// otelhttp wraps the whole mux so every request produces a span. It is a
+	// no-op when the tracer provider is the OTel default (no-op) provider.
 	handler := otelhttp.NewHandler(r, "natlas-server")
 
 	return &http.Server{
@@ -54,34 +51,25 @@ func New(cfg *config.Server, deps Deps) *http.Server {
 }
 
 func healthz() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	}
 }
 
-// readyz pings every dependency that has a cheap liveness check. It is
-// intentionally stricter than /healthz: kubelet-style probes should use it
-// as the readiness gate.
+// readyz pings the relational store. Kubelet-style probes should use it as
+// the readiness gate; /healthz is a static liveness signal.
 func readyz(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		status := map[string]string{}
 		code := http.StatusOK
 
-		if deps.Postgres != nil {
-			if err := deps.Postgres.Ping(ctx); err != nil {
-				status["postgres"] = err.Error()
+		if deps.Store != nil {
+			if err := deps.Store.Ping(ctx); err != nil {
+				status["db"] = err.Error()
 				code = http.StatusServiceUnavailable
 			} else {
-				status["postgres"] = "ok"
-			}
-		}
-		if deps.SQLite != nil {
-			if err := deps.SQLite.PingContext(ctx); err != nil {
-				status["sqlite"] = err.Error()
-				code = http.StatusServiceUnavailable
-			} else {
-				status["sqlite"] = "ok"
+				status["db"] = "ok"
 			}
 		}
 		writeJSON(w, code, status)

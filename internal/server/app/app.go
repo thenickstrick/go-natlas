@@ -1,53 +1,47 @@
 // Package app is the natlas-server bootstrap: it resolves configuration into
-// live clients (Postgres/SQLite, OpenSearch, object store), verifies each with
-// a startup liveness check, wires them into the HTTP server, and exposes a
-// single Run method that blocks until the caller's context is cancelled.
+// live clients (Store over Postgres/SQLite, OpenSearch, object store), verifies
+// each with a startup liveness check, runs database migrations, wires them
+// into the HTTP server, and exposes a single Run method that blocks until the
+// caller's context is cancelled.
 //
-// Any failure during New aborts startup — the operator sees a readable error
-// and the process exits non-zero. No background retry; if Postgres is down at
-// boot, the supervisor should restart us.
+// Any failure during New aborts startup with a readable error; the process
+// exits non-zero. No background retries — if a dependency is down at boot,
+// the supervisor should restart us.
 package app
 
 import (
 	"context"
 	"crypto/tls"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/opensearch-project/opensearch-go/v4"
 
-	// Register pure-Go SQLite driver under the name "sqlite".
-	_ "modernc.org/sqlite"
-
 	"github.com/thenickstrick/go-natlas/internal/config"
+	"github.com/thenickstrick/go-natlas/internal/server/data"
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver"
 )
 
 // App owns every long-lived resource the server holds open.
 type App struct {
-	cfg *config.Server
-
-	pg     *pgxpool.Pool
-	sqlite *sql.DB
-	os     *opensearch.Client
-	s3     *minio.Client
-
+	cfg     *config.Server
+	store   data.Store
+	os      *opensearch.Client
+	s3      *minio.Client
 	httpSrv *http.Server
 }
 
-// New builds an App, performs one liveness check per dependency, and returns
-// a ready-to-run instance. The caller must eventually invoke Run.
+// New builds an App: one liveness check per dependency, then a ready-to-run
+// HTTP server. Migrations are applied as part of store construction.
 func New(ctx context.Context, cfg *config.Server) (*App, error) {
 	a := &App{cfg: cfg}
 
-	if err := a.initDatabase(ctx); err != nil {
+	if err := a.initStore(ctx); err != nil {
 		a.close()
 		return nil, err
 	}
@@ -61,8 +55,7 @@ func New(ctx context.Context, cfg *config.Server) (*App, error) {
 	}
 
 	a.httpSrv = httpserver.New(cfg, httpserver.Deps{
-		Postgres:   a.pg,
-		SQLite:     a.sqlite,
+		Store:      a.store,
 		OpenSearch: a.os,
 		S3:         a.s3,
 	})
@@ -70,8 +63,8 @@ func New(ctx context.Context, cfg *config.Server) (*App, error) {
 }
 
 // Run starts the HTTP listener and blocks until ctx is cancelled or the
-// listener returns an error. On shutdown it drains in-flight requests with
-// a 10s grace period and closes all backing clients.
+// listener returns an error. On shutdown, in-flight requests drain within
+// 10 seconds and every backing client is closed.
 func (a *App) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- a.httpSrv.ListenAndServe() }()
@@ -82,10 +75,7 @@ func (a *App) Run(ctx context.Context) error {
 		defer cancel()
 		err := a.httpSrv.Shutdown(sctx)
 		a.close()
-		if err != nil {
-			return err
-		}
-		return nil
+		return err
 	case err := <-errCh:
 		a.close()
 		if errors.Is(err, http.ErrServerClosed) {
@@ -95,33 +85,28 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
-func (a *App) initDatabase(ctx context.Context) error {
+func (a *App) initStore(ctx context.Context) error {
+	var (
+		store data.Store
+		err   error
+	)
 	switch a.cfg.Dialect() {
 	case "postgres":
-		pool, err := pgxpool.New(ctx, a.cfg.Postgres.URL)
+		store, err = data.NewPostgresStore(ctx, a.cfg.Postgres.URL)
 		if err != nil {
-			return fmt.Errorf("postgres pool: %w", err)
+			return fmt.Errorf("postgres store: %w", err)
 		}
-		if err := pool.Ping(ctx); err != nil {
-			pool.Close()
-			return fmt.Errorf("postgres ping: %w", err)
-		}
-		a.pg = pool
-		slog.InfoContext(ctx, "postgres connected")
+		slog.InfoContext(ctx, "postgres connected + migrations applied")
 	case "sqlite":
-		db, err := sql.Open("sqlite", a.cfg.SQLite.Path)
+		store, err = data.NewSQLiteStore(ctx, a.cfg.SQLite.Path)
 		if err != nil {
-			return fmt.Errorf("sqlite open: %w", err)
+			return fmt.Errorf("sqlite store: %w", err)
 		}
-		if err := db.PingContext(ctx); err != nil {
-			_ = db.Close()
-			return fmt.Errorf("sqlite ping: %w", err)
-		}
-		a.sqlite = db
-		slog.InfoContext(ctx, "sqlite connected", "path", a.cfg.SQLite.Path)
+		slog.InfoContext(ctx, "sqlite connected + migrations applied", "path", a.cfg.SQLite.Path)
 	default:
 		return fmt.Errorf("unknown dialect %q", a.cfg.Dialect())
 	}
+	a.store = store
 	return nil
 }
 
@@ -138,9 +123,9 @@ func (a *App) initOpenSearch(ctx context.Context) error {
 		return fmt.Errorf("opensearch client: %w", err)
 	}
 
-	// Phase 1 liveness probe: raw HTTP GET against the cluster root. Switching
-	// to the typed opensearchapi client happens in Phase 5 when we start
-	// issuing real index/search calls.
+	// Phase 1 liveness probe: plain HTTP GET against the cluster root. The
+	// typed opensearchapi client comes online in Phase 5 when we start issuing
+	// real index/search calls.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.OpenSearch.URL, nil)
 	if err != nil {
 		return fmt.Errorf("opensearch probe request: %w", err)
@@ -193,12 +178,8 @@ func (a *App) initObjectStore(ctx context.Context) error {
 }
 
 func (a *App) close() {
-	if a.pg != nil {
-		a.pg.Close()
-		a.pg = nil
-	}
-	if a.sqlite != nil {
-		_ = a.sqlite.Close()
-		a.sqlite = nil
+	if a.store != nil {
+		a.store.Close()
+		a.store = nil
 	}
 }

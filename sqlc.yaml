@@ -1,0 +1,38 @@
+version: "2"
+sql:
+  # Postgres: uses native CIDR/INET, maps to net/netip types via pgx v5.
+  - engine: "postgresql"
+    schema: "internal/server/data/migrations/postgres/0001_init.up.sql"
+    queries: "internal/server/data/postgres/queries"
+    gen:
+      go:
+        package: "pgen"
+        out: "internal/server/data/postgres/gen"
+        sql_package: "pgx/v5"
+        emit_interface: true
+        emit_empty_slices: true
+        emit_json_tags: false
+        emit_exact_table_names: false
+        overrides:
+          # Shorthand form avoids the aliased-import bug triggered by the
+          # object form when the import alias equals the default package name.
+          - db_type: "cidr"
+            nullable: false
+            go_type: "net/netip.Prefix"
+          - db_type: "inet"
+            nullable: false
+            go_type: "net/netip.Addr"
+
+  # SQLite: dates and IPs are stored as TEXT; the application converts.
+  - engine: "sqlite"
+    schema: "internal/server/data/migrations/sqlite/0001_init.up.sql"
+    queries: "internal/server/data/sqlite/queries"
+    gen:
+      go:
+        package: "sqgen"
+        out: "internal/server/data/sqlite/gen"
+        sql_package: "database/sql"
+        emit_interface: true
+        emit_empty_slices: true
+        emit_json_tags: false
+        emit_exact_table_names: false

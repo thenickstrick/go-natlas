@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS user_invitations;
+DROP TABLE IF EXISTS scope_log;
+DROP TABLE IF EXISTS natlas_services;
+DROP TABLE IF EXISTS agent_config;
+DROP TABLE IF EXISTS rescan_tasks;
+DROP TABLE IF EXISTS scope_item_tags;
+DROP TABLE IF EXISTS tags;
+DROP TABLE IF EXISTS scope_items;
+DROP TABLE IF EXISTS agents;
+DROP TABLE IF EXISTS users;
