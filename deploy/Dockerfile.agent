@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.7
+FROM golang:1.26.2-bookworm AS build
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY . .
+ARG VERSION=dev
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 GOOS=linux go build \
+        -trimpath \
+        -ldflags "-s -w -X main.Version=${VERSION}" \
+        -o /out/natlas-agent ./cmd/natlas-agent
+
+# Runtime image: debian-slim + nmap + headless chromium (for chromedp, phase 8).
+# Chromium is present now so the image shape is stable across phases; the agent
+# stub doesn't invoke it yet.
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        dumb-init \
+        libcap2-bin \
+        nmap \
+        chromium \
+        fonts-liberation \
+ && rm -rf /var/lib/apt/lists/* \
+ && setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/nmap
+
+# chromedp needs a Chrome binary path; Debian's package installs /usr/bin/chromium.
+ENV CHROMEDP_PATH=/usr/bin/chromium
+
+COPY --from=build /out/natlas-agent /usr/local/bin/natlas-agent
+
+# /data holds per-scan temporary files (nmap -oA outputs, screenshots pre-upload).
+RUN mkdir -p /data && chown nobody:nogroup /data
+USER nobody:nogroup
+WORKDIR /data
+
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["/usr/local/bin/natlas-agent"]

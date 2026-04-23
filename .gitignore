@@ -1,0 +1,30 @@
+# Build output
+/bin/
+/dist/
+
+# Go artifacts
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Editor state
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Local environment overrides (should NEVER be committed)
+.env
+.env.local
+deploy/.env
+
+# Runtime data (when running uncontainerized)
+/data/
+/tmp/
+
+# Node bits in case someone runs the SCSS build locally
+/node_modules/

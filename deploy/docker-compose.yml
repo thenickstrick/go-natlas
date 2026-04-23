@@ -1,0 +1,168 @@
+# Development docker-compose. Not production-safe.
+# Brings up: Postgres 17, OpenSearch 3.6, Garage (S3), Jaeger v2, OTel Collector,
+# MailDev, plus the natlas-server and natlas-agent built from source.
+name: natlas
+
+services:
+  postgres:
+    image: postgres:17.2
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: natlas
+      POSTGRES_PASSWORD: natlas-dev-password-do-not-use
+      POSTGRES_DB: natlas
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U natlas -d natlas"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+
+  opensearch:
+    image: opensearchproject/opensearch:3.6.0
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - plugins.security.disabled=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Natlas-Dev-Password-1!
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [backend]
+
+  garage:
+    image: dxflrs/garage:v1.0.1
+    restart: unless-stopped
+    environment:
+      RUST_LOG: "garage=info"
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    ports:
+      - "3900:3900"   # S3 API
+      - "3902:3902"   # Admin API
+    networks: [backend]
+
+  # One-shot: creates the cluster layout, bucket, and a deterministic access key.
+  # Fixed dev credentials — NEVER reuse for production.
+  garage-init:
+    image: dxflrs/garage:v1.0.1
+    depends_on:
+      - garage
+    restart: "no"
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - ./init-garage.sh:/init-garage.sh:ro
+    entrypoint: ["/bin/sh", "/init-garage.sh"]
+    networks: [backend]
+
+  jaeger:
+    image: jaegertracing/jaeger:2.3.0
+    restart: unless-stopped
+    ports:
+      - "16686:16686"  # UI
+    networks: [backend]
+
+  otel:
+    image: otel/opentelemetry-collector-contrib:0.112.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+    depends_on:
+      - jaeger
+    networks: [backend]
+
+  maildev:
+    image: maildev/maildev:latest
+    restart: unless-stopped
+    environment:
+      - MAILDEV_INCOMING_USER=natlas
+      - MAILDEV_INCOMING_PASS=natlas-dev-password-do-not-use
+    ports:
+      - "1080:1080"  # Web UI
+      - "1025:1025"  # SMTP
+    networks: [backend]
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    depends_on:
+      postgres: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+      garage-init: { condition: service_completed_successfully }
+      otel: { condition: service_started }
+    environment:
+      - HTTP_ADDR=:5001
+      - PUBLIC_URL=http://localhost:5001
+      - SECRET_KEY=dev-secret-change-me-dev-secret-change-me-dev-secret
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+      - POSTGRES_URL=postgres://natlas:natlas-dev-password-do-not-use@postgres:5432/natlas?sslmode=disable
+      - OPENSEARCH_URL=http://opensearch:9200
+      - OPENSEARCH_USERNAME=admin
+      - OPENSEARCH_PASSWORD=Natlas-Dev-Password-1!
+      - S3_ENDPOINT=garage:3900
+      - S3_BUCKET=natlas-screenshots
+      - S3_ACCESS_KEY=GKnatlas00000000000000000000dev01
+      - S3_SECRET_KEY=natlas0000000000000000000000000000000000000000000000000000dev01
+      - S3_REGION=garage
+      - S3_USE_TLS=false
+      - SMTP_HOST=maildev
+      - SMTP_PORT=1025
+      - SMTP_USERNAME=natlas
+      - SMTP_PASSWORD=natlas-dev-password-do-not-use
+      - SMTP_USE_TLS=false
+      - SMTP_FROM=noreply@natlas.local
+      - OTEL_ENABLED=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel:4317
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+    ports:
+      - "5001:5001"
+    networks: [backend]
+
+  agent:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.agent
+    depends_on:
+      server: { condition: service_started }
+    environment:
+      - NATLAS_SERVER_URL=http://server:5001
+      - NATLAS_MAX_WORKERS=2
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+      - OTEL_ENABLED=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel:4317
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks: [backend]
+
+volumes:
+  postgres_data:
+  opensearch_data:
+  garage_meta:
+  garage_data:
+
+networks:
+  backend:

@@ -1,0 +1,29 @@
+# Single-node Garage config for local development. Replication factor 1 is ONLY
+# acceptable for dev — production needs >= 3 across physical nodes.
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir     = "/var/lib/garage/data"
+db_engine    = "sqlite"
+
+replication_factor = 1
+
+rpc_bind_addr   = "[::]:3901"
+rpc_public_addr = "garage:3901"
+rpc_secret      = "a7e1ffcd3a9bce1a3e96e1b9a6a7f6d2c5e9b1a3e96e1b9a6a7f6d2c5e9b1a3c"
+
+bootstrap_peers = []
+
+[s3_api]
+s3_region     = "garage"
+api_bind_addr = "[::]:3900"
+root_domain   = ".s3.garage.local"
+
+[s3_web]
+bind_addr   = "[::]:3904"
+root_domain = ".web.garage.local"
+index       = "index.html"
+
+[admin]
+api_bind_addr = "[::]:3902"
+admin_token   = "natlas-dev-admin-token"
+metrics_token = "natlas-dev-metrics-token"
