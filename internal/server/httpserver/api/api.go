@@ -21,14 +21,16 @@ import (
 	"github.com/thenickstrick/go-natlas/internal/protocol"
 	"github.com/thenickstrick/go-natlas/internal/server/data"
 	"github.com/thenickstrick/go-natlas/internal/server/scope"
+	"github.com/thenickstrick/go-natlas/internal/server/search"
 )
 
 // Handlers holds dependencies for the /api/v1 routes. It is intentionally
-// small: most heavy lifting lives in the Store and ScopeManager.
+// small: most heavy lifting lives in the Store, ScopeManager, and Searcher.
 type Handlers struct {
-	Store   data.Store
-	Scope   *scope.ScopeManager
-	Version string // server version echoed into logs, not to clients
+	Store    data.Store
+	Scope    *scope.ScopeManager
+	Searcher search.Searcher
+	Version  string // server version echoed into logs, not to clients
 }
 
 // Mount attaches all /api/v1/* routes to the given mux (chi.Router, really,
@@ -180,13 +182,18 @@ func (h *Handlers) PostResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Complete the matching rescan_task if any. We look up by scan_id via the
-	// store's existing indexes — for Phase 4 we just best-effort-complete.
-	// The precise mapping (scan_id -> rescan_task.id) lives in the
-	// rescan_task row after dispatch in Phase 6; here we noop.
-	//
-	// TODO(phase-5): index result into OpenSearch (latest + history).
-	// TODO(phase-6): mark matching rescan_task complete + write scan_id back.
+	// Index into OpenSearch: history (append) + latest (overwrite by IP). The
+	// Searcher abstracts both writes; ordering is history-first so a partial
+	// failure never leaves latest pointing at a missing history entry.
+	if h.Searcher != nil {
+		doc := search.FromResult(&result)
+		if err := h.Searcher.IndexResult(r.Context(), doc); err != nil {
+			writeErr(w, http.StatusInternalServerError, fmt.Sprintf("index result: %v", err), true)
+			return
+		}
+	}
+
+	// TODO(phase-7): mark matching rescan_task complete + write scan_id back.
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":     "accepted",

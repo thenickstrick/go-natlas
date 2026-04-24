@@ -14,7 +14,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/minio/minio-go/v7"
-	"github.com/opensearch-project/opensearch-go/v4"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/thenickstrick/go-natlas/internal/config"
@@ -22,14 +21,15 @@ import (
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver/api"
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver/auth"
 	"github.com/thenickstrick/go-natlas/internal/server/scope"
+	"github.com/thenickstrick/go-natlas/internal/server/search"
 )
 
 // Deps is the dependency handle shared by every handler.
 type Deps struct {
-	Store      data.Store
-	Scope      *scope.ScopeManager
-	OpenSearch *opensearch.Client
-	S3         *minio.Client
+	Store    data.Store
+	Scope    *scope.ScopeManager
+	Searcher search.Searcher
+	S3       *minio.Client
 }
 
 // New returns a configured *http.Server ready for ListenAndServe.
@@ -46,7 +46,7 @@ func New(cfg *config.Server, deps Deps) *http.Server {
 	// /api/v1 — agent-facing endpoints. Auth is middleware-gated; when
 	// AGENT_AUTH_REQUIRED is false (dev default in compose) the middleware
 	// is a pass-through so running `natlas-agent` locally needs no DB seed.
-	handlers := &api.Handlers{Store: deps.Store, Scope: deps.Scope}
+	handlers := &api.Handlers{Store: deps.Store, Scope: deps.Scope, Searcher: deps.Searcher}
 	r.Route("/api/v1", func(apiR chi.Router) {
 		apiR.Use(auth.AgentAuth(deps.Store, cfg.AgentAuthRequired))
 		apiR.Get("/work", handlers.GetWork)

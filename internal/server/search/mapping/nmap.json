@@ -1,0 +1,117 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 1,
+    "refresh_interval": "1s",
+    "mapping": {
+      "ignore_malformed": true,
+      "total_fields": {
+        "limit": 4096
+      }
+    }
+  },
+  "mappings": {
+    "_meta": {
+      "natlas_mapping_version": "1"
+    },
+    "dynamic": "false",
+    "properties": {
+      "ctime":          { "type": "date" },
+      "@timestamp":     { "type": "alias", "path": "ctime" },
+
+      "agent":          { "type": "keyword" },
+      "agent_id":       { "type": "keyword" },
+      "agent_version":  { "type": "keyword" },
+
+      "scan_id":        { "type": "keyword" },
+      "scan_reason":    { "type": "keyword" },
+      "scan_start":     { "type": "date" },
+      "scan_stop":      { "type": "date" },
+      "elapsed_s":      { "type": "integer" },
+      "tags":           { "type": "keyword" },
+
+      "ip":             { "type": "ip" },
+      "hostname":       { "type": "keyword" },
+      "is_up":          { "type": "boolean" },
+      "timed_out":      { "type": "boolean" },
+
+      "port_count":     { "type": "integer" },
+      "port_str":       { "type": "text" },
+
+      "nmap_data":      { "type": "text" },
+      "xml_data":       { "type": "text", "index": false },
+      "gnmap_data":     { "type": "text", "index": false },
+
+      "ports": {
+        "type": "object",
+        "properties": {
+          "id":       { "type": "keyword" },
+          "number":   { "type": "integer" },
+          "protocol": { "type": "keyword" },
+          "state":    { "type": "keyword" },
+          "reason":   { "type": "text" },
+          "banner":   { "type": "text" },
+          "service": {
+            "properties": {
+              "name":      { "type": "keyword" },
+              "product":   { "type": "keyword" },
+              "version":   { "type": "keyword" },
+              "ostype":    { "type": "keyword" },
+              "conf":      { "type": "integer" },
+              "cpelist":   { "type": "text" },
+              "method":    { "type": "text" },
+              "extrainfo": { "type": "text" },
+              "tunnel":    { "type": "keyword" }
+            }
+          },
+          "scripts": {
+            "properties": {
+              "id":     { "type": "keyword" },
+              "output": { "type": "text" }
+            }
+          },
+          "ssl": {
+            "properties": {
+              "issuer": {
+                "properties": {
+                  "commonName":         { "type": "keyword" },
+                  "countryName":        { "type": "keyword" },
+                  "organizationName":   { "type": "keyword" }
+                }
+              },
+              "subject": {
+                "properties": {
+                  "commonName":  { "type": "keyword" },
+                  "altNames":    { "type": "text" }
+                }
+              },
+              "notBefore":    { "type": "date" },
+              "notAfter":     { "type": "date" },
+              "md5":          { "type": "keyword" },
+              "sha1":         { "type": "keyword" },
+              "pem":          { "type": "text", "index": false },
+              "pubkey": {
+                "properties": {
+                  "bits": { "type": "integer" },
+                  "type": { "type": "keyword" }
+                }
+              },
+              "sig_alg":      { "type": "keyword" }
+            }
+          }
+        }
+      },
+
+      "screenshots": {
+        "type": "object",
+        "properties": {
+          "host":       { "type": "ip" },
+          "port":       { "type": "integer" },
+          "service":    { "type": "keyword" },
+          "hash":       { "type": "keyword" },
+          "thumb_hash": { "type": "keyword" }
+        }
+      }
+    }
+  }
+}

@@ -29,16 +29,17 @@ import (
 	"github.com/thenickstrick/go-natlas/internal/server/data"
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver"
 	"github.com/thenickstrick/go-natlas/internal/server/scope"
+	"github.com/thenickstrick/go-natlas/internal/server/search"
 )
 
 // App owns every long-lived resource the server holds open.
 type App struct {
-	cfg     *config.Server
-	store   data.Store
-	scope   *scope.ScopeManager
-	os      *opensearch.Client
-	s3      *minio.Client
-	httpSrv *http.Server
+	cfg      *config.Server
+	store    data.Store
+	scope    *scope.ScopeManager
+	searcher search.Searcher
+	s3       *minio.Client
+	httpSrv  *http.Server
 }
 
 // New builds an App: one liveness check per dependency, then a ready-to-run
@@ -64,10 +65,10 @@ func New(ctx context.Context, cfg *config.Server) (*App, error) {
 	}
 
 	a.httpSrv = httpserver.New(cfg, httpserver.Deps{
-		Store:      a.store,
-		Scope:      a.scope,
-		OpenSearch: a.os,
-		S3:         a.s3,
+		Store:    a.store,
+		Scope:    a.scope,
+		Searcher: a.searcher,
+		S3:       a.s3,
 	})
 	return a, nil
 }
@@ -191,10 +192,11 @@ func (a *App) initOpenSearch(ctx context.Context) error {
 		return fmt.Errorf("opensearch client: %w", err)
 	}
 
-	// Phase 1 liveness probe: plain HTTP GET against the cluster root. The
-	// typed opensearchapi client comes online in Phase 5 when we start issuing
-	// real index/search calls.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.OpenSearch.URL, nil)
+	// Liveness probe up front so a misconfigured URL fails before we try to
+	// create indices and produce a less obvious error.
+	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, a.cfg.OpenSearch.URL, nil)
 	if err != nil {
 		return fmt.Errorf("opensearch probe request: %w", err)
 	}
@@ -216,8 +218,11 @@ func (a *App) initOpenSearch(ctx context.Context) error {
 		return fmt.Errorf("opensearch probe: HTTP %d from %s", resp.StatusCode, a.cfg.OpenSearch.URL)
 	}
 
-	a.os = client
-	slog.InfoContext(ctx, "opensearch connected", "url", a.cfg.OpenSearch.URL)
+	if err := search.Bootstrap(ctx, client); err != nil {
+		return fmt.Errorf("opensearch bootstrap: %w", err)
+	}
+	a.searcher = search.New(client)
+	slog.InfoContext(ctx, "opensearch connected + indices ensured", "url", a.cfg.OpenSearch.URL)
 	return nil
 }
 
