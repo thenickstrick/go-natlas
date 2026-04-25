@@ -63,7 +63,7 @@ func run() int {
 		"dialect", cfg.Dialect(),
 	)
 
-	a, err := app.New(ctx, cfg)
+	a, err := app.New(ctx, cfg, app.NewOpts{Version: Version})
 	if err != nil {
 		slog.ErrorContext(ctx, "app bootstrap", "err", err)
 		return 1

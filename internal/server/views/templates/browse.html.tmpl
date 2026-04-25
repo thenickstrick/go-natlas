@@ -1,0 +1,44 @@
+{{define "content"}}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Hosts</h1>
+  <form method="GET" action="/browse" class="d-flex">
+    <input type="search" name="q" value="{{.Data.Query}}" class="form-control form-control-sm me-2" placeholder="query_string…" style="min-width: 260px;">
+    <button type="submit" class="btn btn-sm btn-primary">Search</button>
+  </form>
+</div>
+
+{{if not .Data.Hits}}
+  <div class="empty-state">
+    <p class="mb-0">No hosts match.{{if .Data.Query}} Try a different query.{{else}} Configure scope on the <a href="/admin/scope">admin page</a> or wait for the first cycle to complete.{{end}}</p>
+  </div>
+{{else}}
+  <table class="table table-hover table-sm">
+    <thead>
+      <tr><th>IP</th><th>Hostname</th><th>Ports</th><th>Last scan</th><th>Agent</th><th>Tags</th></tr>
+    </thead>
+    <tbody>
+      {{range .Data.Hits}}
+      <tr>
+        <td><a href="/host/{{.IP}}">{{.IP}}</a></td>
+        <td class="text-muted">{{.Hostname}}</td>
+        <td>{{.PortCount}}</td>
+        <td class="text-muted small">{{.ScanStop.Format "2006-01-02 15:04"}}</td>
+        <td class="text-muted small">{{.Agent}}</td>
+        <td class="text-muted small">{{join ", " .Tags}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <div class="d-flex justify-content-between text-muted small">
+    <div>{{.Data.Total}} total</div>
+    <nav>
+      {{if .Data.PrevOffset}}
+        <a href="/browse?q={{.Data.Query}}&offset={{.Data.PrevOffset}}" class="btn btn-sm btn-outline-secondary">&laquo; Prev</a>
+      {{end}}
+      {{if .Data.NextOffset}}
+        <a href="/browse?q={{.Data.Query}}&offset={{.Data.NextOffset}}" class="btn btn-sm btn-outline-secondary">Next &raquo;</a>
+      {{end}}
+    </nav>
+  </div>
+{{end}}
+{{end}}

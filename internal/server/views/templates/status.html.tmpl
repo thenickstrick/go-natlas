@@ -1,0 +1,15 @@
+{{define "content"}}
+<h1 class="h3 mb-3">Server status</h1>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-3"><div class="card"><div class="card-body"><div class="text-muted small">Scope (whitelist)</div><div class="h4 mb-0">{{.Data.WhitelistSize}}</div></div></div></div>
+  <div class="col-sm-3"><div class="card"><div class="card-body"><div class="text-muted small">Blacklist</div><div class="h4 mb-0">{{.Data.BlacklistSize}}</div></div></div></div>
+  <div class="col-sm-3"><div class="card"><div class="card-body"><div class="text-muted small">Cycles completed</div><div class="h4 mb-0">{{.Data.CyclesCompleted}}</div></div></div></div>
+  <div class="col-sm-3"><div class="card"><div class="card-body"><div class="text-muted small">Cursor</div><div class="h4 mb-0">{{.Data.Cursor}}</div></div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-sm-6"><div class="card"><div class="card-body"><div class="text-muted small">Current cycle started</div><div class="h6">{{.Data.CycleStart.Format "2006-01-02 15:04:05 UTC"}}</div></div></div></div>
+  <div class="col-sm-6"><div class="card"><div class="card-body"><div class="text-muted small">Server version</div><div class="h6">{{.Data.Version}}</div></div></div></div>
+</div>
+{{end}}

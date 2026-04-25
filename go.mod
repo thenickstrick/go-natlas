@@ -3,8 +3,10 @@ module github.com/thenickstrick/go-natlas
 go 1.26.2
 
 require (
+	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/golang-migrate/migrate/v4 v4.19.1
+	github.com/gorilla/csrf v1.7.3
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/minio/minio-go/v7 v7.0.100
@@ -45,6 +47,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

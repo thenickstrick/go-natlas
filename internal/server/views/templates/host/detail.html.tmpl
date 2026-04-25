@@ -1,0 +1,44 @@
+{{define "content"}}
+{{with .Data.Host}}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h3 mb-1">{{.IP}}</h1>
+    <div class="text-muted">{{.Hostname}}</div>
+  </div>
+  <div class="text-muted small">
+    Last scan {{.ScanStop.Format "2006-01-02 15:04"}} · {{.ElapsedS}}s elapsed
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-sm-3"><div class="card"><div class="card-body"><div class="text-muted small">Status</div><div class="h5 mb-0">{{if .IsUp}}<span class="badge bg-success">up</span>{{else}}<span class="badge bg-secondary">down</span>{{end}}</div></div></div></div>
+  <div class="col-sm-3"><div class="card"><div class="card-body"><div class="text-muted small">Open ports</div><div class="h5 mb-0">{{.PortCount}}</div></div></div></div>
+  <div class="col-sm-3"><div class="card"><div class="card-body"><div class="text-muted small">Agent</div><div class="h6 mb-0">{{.Agent}}</div></div></div></div>
+  <div class="col-sm-3"><div class="card"><div class="card-body"><div class="text-muted small">Scan ID</div><div class="small text-truncate">{{.ScanID}}</div></div></div></div>
+</div>
+
+{{if .Ports}}
+<table class="table table-sm port-row">
+  <thead><tr><th>Port</th><th>State</th><th>Service</th><th>Version</th><th>CPE</th></tr></thead>
+  <tbody>
+    {{range .Ports}}
+    <tr>
+      <td>{{.ID}}</td>
+      <td>{{.State}}</td>
+      <td>{{.Service.Name}}{{if .Service.Product}} / {{.Service.Product}}{{end}}</td>
+      <td class="text-muted">{{.Service.Version}}</td>
+      <td class="text-muted small">{{.Service.CPEList}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+
+{{if .NmapData}}
+<details class="mt-4">
+  <summary class="text-muted small">Raw nmap output</summary>
+  <pre class="scan-output border rounded p-2 mt-2 bg-light">{{.NmapData}}</pre>
+</details>
+{{end}}
+{{end}}
+{{end}}

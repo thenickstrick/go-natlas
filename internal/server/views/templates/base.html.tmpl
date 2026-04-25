@@ -1,0 +1,54 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{if .PageTitle}}{{.PageTitle}} · {{end}}natlas</title>
+  <link rel="stylesheet" href="/static/bootstrap.min.css">
+  <style>
+    body { padding-top: 60px; }
+    .navbar-brand { font-weight: 600; letter-spacing: 0.5px; }
+    pre.scan-output { max-height: 420px; overflow: auto; font-size: 0.85rem; }
+    .port-row td { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem; }
+    .empty-state { padding: 4rem 1rem; text-align: center; color: #888; }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg fixed-top navbar-dark bg-dark">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/">natlas</a>
+      <div class="collapse navbar-collapse">
+        <ul class="navbar-nav me-auto">
+          <li class="nav-item"><a class="nav-link{{if eq .Path "/browse"}} active{{end}}" href="/browse">Browse</a></li>
+          <li class="nav-item"><a class="nav-link{{if eq .Path "/status"}} active{{end}}" href="/status">Status</a></li>
+          {{if and .User .User.IsAdmin}}
+            <li class="nav-item"><a class="nav-link{{if eq .Path "/admin/scope"}} active{{end}}" href="/admin/scope">Scope</a></li>
+          {{end}}
+        </ul>
+        <ul class="navbar-nav">
+          {{if .User}}
+            <li class="nav-item"><span class="navbar-text me-3">{{.User.Email}}{{if .User.IsAdmin}} <span class="badge bg-warning text-dark">admin</span>{{end}}</span></li>
+            <li class="nav-item">
+              <form method="POST" action="/auth/logout" class="d-inline">
+                <input type="hidden" name="gorilla.csrf.Token" value="{{.CSRFToken}}">
+                <button type="submit" class="btn btn-sm btn-outline-light">Log out</button>
+              </form>
+            </li>
+          {{else}}
+            <li class="nav-item"><a class="nav-link" href="/auth/login">Log in</a></li>
+          {{end}}
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container py-4">
+    {{if .Flash}}
+      <div class="alert alert-info">{{.Flash}}</div>
+    {{end}}
+    {{block "content" .}}{{end}}
+  </main>
+
+  <script src="/static/htmx.min.js" defer></script>
+</body>
+</html>{{end}}

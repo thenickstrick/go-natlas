@@ -30,6 +30,8 @@ import (
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver"
 	"github.com/thenickstrick/go-natlas/internal/server/scope"
 	"github.com/thenickstrick/go-natlas/internal/server/search"
+	"github.com/thenickstrick/go-natlas/internal/server/sessions"
+	"github.com/thenickstrick/go-natlas/internal/server/views"
 )
 
 // App owns every long-lived resource the server holds open.
@@ -39,13 +41,25 @@ type App struct {
 	scope    *scope.ScopeManager
 	searcher search.Searcher
 	s3       *minio.Client
+	sessions *sessions.Manager
+	views    *views.Renderer
+	version  string
 	httpSrv  *http.Server
+}
+
+// NewOpts carries optional runtime metadata that doesn't belong on Config
+// (like the binary version stamped at link time).
+type NewOpts struct {
+	Version string
 }
 
 // New builds an App: one liveness check per dependency, then a ready-to-run
 // HTTP server. Migrations are applied as part of store construction.
-func New(ctx context.Context, cfg *config.Server) (*App, error) {
-	a := &App{cfg: cfg}
+func New(ctx context.Context, cfg *config.Server, opts NewOpts) (*App, error) {
+	a := &App{cfg: cfg, version: opts.Version}
+	if a.version == "" {
+		a.version = "dev"
+	}
 
 	if err := a.initStore(ctx); err != nil {
 		a.close()
@@ -63,14 +77,36 @@ func New(ctx context.Context, cfg *config.Server) (*App, error) {
 		a.close()
 		return nil, err
 	}
+	if err := a.initWeb(); err != nil {
+		a.close()
+		return nil, err
+	}
 
 	a.httpSrv = httpserver.New(cfg, httpserver.Deps{
 		Store:    a.store,
 		Scope:    a.scope,
 		Searcher: a.searcher,
 		S3:       a.s3,
+		Sessions: a.sessions,
+		Views:    a.views,
+		Version:  a.version,
 	})
 	return a, nil
+}
+
+// initWeb builds the session manager and the template renderer. Both are
+// process-lifetime dependencies; failures here are configuration bugs.
+func (a *App) initWeb() error {
+	a.sessions = sessions.New(sessions.Options{
+		Lifetime: 24 * time.Hour,
+		Secure:   strings.HasPrefix(a.cfg.PublicURL, "https://"),
+	})
+	r, err := views.New()
+	if err != nil {
+		return fmt.Errorf("views: %w", err)
+	}
+	a.views = r
+	return nil
 }
 
 // Run starts the HTTP listener and blocks until ctx is cancelled or the
