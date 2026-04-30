@@ -47,12 +47,16 @@ type Store interface {
 	NatlasServicesGet(ctx context.Context) (NatlasServices, error)
 	NatlasServicesUpdate(ctx context.Context, sha256, services string) error
 
-	// Rescan queue
+	// Rescan queue. Dispatch records the assigned scan_id at the same time
+	// as flipping dispatched_at, so a later result can complete the task by
+	// scan_id alone (no sticky id-passthrough state on the agent).
 	RescanTaskCreate(ctx context.Context, userID int64, target netip.Addr) (RescanTask, error)
+	RescanTaskGetByID(ctx context.Context, id int64) (RescanTask, error)
 	RescanTaskNextPending(ctx context.Context) (RescanTask, error)
-	RescanTaskDispatch(ctx context.Context, id int64) error
-	RescanTaskComplete(ctx context.Context, id int64, scanID string) error
+	RescanTaskDispatch(ctx context.Context, id int64, scanID string) error
+	RescanTaskCompleteByScanID(ctx context.Context, scanID string) (rowsAffected int64, err error)
 	RescanTaskReapStale(ctx context.Context, before time.Time) ([]int64, error)
+	RescanTaskListForUser(ctx context.Context, userID int64, limit, offset int32) ([]RescanTask, error)
 
 	// Lifecycle
 	Ping(ctx context.Context) error

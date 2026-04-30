@@ -210,14 +210,28 @@ func TestRescanQueueLifecycle(t *testing.T) {
 		t.Fatalf("NextPending returned wrong task: %+v vs %+v", next, task)
 	}
 
-	if err := store.RescanTaskDispatch(ctx, task.ID); err != nil {
+	if err := store.RescanTaskDispatch(ctx, task.ID, "scan-xyz"); err != nil {
 		t.Fatalf("RescanTaskDispatch: %v", err)
 	}
-	if err := store.RescanTaskComplete(ctx, task.ID, "scan-xyz"); err != nil {
-		t.Fatalf("RescanTaskComplete: %v", err)
+	rows, err := store.RescanTaskCompleteByScanID(ctx, "scan-xyz")
+	if err != nil {
+		t.Fatalf("RescanTaskCompleteByScanID: %v", err)
+	}
+	if rows != 1 {
+		t.Fatalf("RescanTaskCompleteByScanID rows: got %d, want 1", rows)
 	}
 
 	if _, err := store.RescanTaskNextPending(ctx); !errors.Is(err, data.ErrNotFound) {
 		t.Fatalf("NextPending after complete: got %v, want ErrNotFound", err)
+	}
+
+	// A second completion attempt is a no-op (rows=0) — completed_at IS NULL
+	// guard is what makes the operation idempotent.
+	rows, err = store.RescanTaskCompleteByScanID(ctx, "scan-xyz")
+	if err != nil {
+		t.Fatalf("idempotent complete: %v", err)
+	}
+	if rows != 0 {
+		t.Fatalf("idempotent complete rows: got %d, want 0", rows)
 	}
 }

@@ -321,6 +321,14 @@ func (s *sqliteStore) RescanTaskCreate(ctx context.Context, userID int64, target
 	return sqRescanToDomain(row)
 }
 
+func (s *sqliteStore) RescanTaskGetByID(ctx context.Context, id int64) (RescanTask, error) {
+	row, err := s.q.RescanTaskGetByID(ctx, id)
+	if err != nil {
+		return RescanTask{}, sqMapNotFound(err)
+	}
+	return sqRescanToDomain(row)
+}
+
 func (s *sqliteStore) RescanTaskNextPending(ctx context.Context) (RescanTask, error) {
 	row, err := s.q.RescanTaskNextPending(ctx)
 	if err != nil {
@@ -329,19 +337,37 @@ func (s *sqliteStore) RescanTaskNextPending(ctx context.Context) (RescanTask, er
 	return sqRescanToDomain(row)
 }
 
-func (s *sqliteStore) RescanTaskDispatch(ctx context.Context, id int64) error {
-	return s.q.RescanTaskDispatch(ctx, id)
-}
-
-func (s *sqliteStore) RescanTaskComplete(ctx context.Context, id int64, scanID string) error {
-	return s.q.RescanTaskComplete(ctx, sqgen.RescanTaskCompleteParams{
+func (s *sqliteStore) RescanTaskDispatch(ctx context.Context, id int64, scanID string) error {
+	return s.q.RescanTaskDispatch(ctx, sqgen.RescanTaskDispatchParams{
 		ID:     id,
 		ScanID: sql.NullString{String: scanID, Valid: true},
 	})
 }
 
+func (s *sqliteStore) RescanTaskCompleteByScanID(ctx context.Context, scanID string) (int64, error) {
+	return s.q.RescanTaskCompleteByScanID(ctx, sql.NullString{String: scanID, Valid: true})
+}
+
 func (s *sqliteStore) RescanTaskReapStale(ctx context.Context, before time.Time) ([]int64, error) {
 	return s.q.RescanTaskReapStale(ctx, sql.NullString{String: formatSQLiteTime(before), Valid: true})
+}
+
+func (s *sqliteStore) RescanTaskListForUser(ctx context.Context, userID int64, limit, offset int32) ([]RescanTask, error) {
+	rows, err := s.q.RescanTaskListForUser(ctx, sqgen.RescanTaskListForUserParams{
+		UserID: userID, Limit: int64(limit), Offset: int64(offset),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RescanTask, 0, len(rows))
+	for _, r := range rows {
+		t, err := sqRescanToDomain(r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, nil
 }
 
 // -----------------------------------------------------------------------------

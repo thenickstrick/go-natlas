@@ -263,6 +263,71 @@ func TestAdminScopeCreateReloadsScope(t *testing.T) {
 	}
 }
 
+func TestHostRescanCreatesTask(t *testing.T) {
+	ts, client, store := startServer(t)
+
+	// Bootstrap admin + log in.
+	_, body := getBody(t, client, ts.URL+"/auth/login")
+	token := extractCSRFToken(t, body)
+	_, _, _ = postForm(t, client, ts.URL+"/auth/bootstrap", url.Values{
+		"gorilla.csrf.Token": {token},
+		"email":              {"admin@example.com"},
+		"password":           {"correcthorse"},
+	})
+
+	// Add a scope item so the target is acceptable.
+	_, body = getBody(t, client, ts.URL+"/admin/scope")
+	token = extractCSRFToken(t, body)
+	_, _, _ = postForm(t, client, ts.URL+"/admin/scope", url.Values{
+		"gorilla.csrf.Token": {token},
+		"cidr":               {"10.0.0.0/30"},
+	})
+
+	// Visit /host/10.0.0.1 to grab a fresh CSRF token from the rescan form.
+	_, body = getBody(t, client, ts.URL+"/host/10.0.0.1")
+	token = extractCSRFToken(t, body)
+
+	// POST the rescan request.
+	code, _, resp := postForm(t, client, ts.URL+"/host/10.0.0.1/rescan", url.Values{
+		"gorilla.csrf.Token": {token},
+	})
+	if code != http.StatusSeeOther || resp.Header.Get("Location") != "/host/10.0.0.1" {
+		t.Fatalf("rescan: got %d loc=%q", code, resp.Header.Get("Location"))
+	}
+
+	// One pending rescan_task should now exist for that target.
+	got, err := store.RescanTaskNextPending(context.Background())
+	if err != nil {
+		t.Fatalf("RescanTaskNextPending: %v", err)
+	}
+	if got.Target.String() != "10.0.0.1" {
+		t.Fatalf("rescan target: got %s, want 10.0.0.1", got.Target)
+	}
+}
+
+func TestHostRescanRefusesOutOfScope(t *testing.T) {
+	ts, client, store := startServer(t)
+
+	_, body := getBody(t, client, ts.URL+"/auth/login")
+	token := extractCSRFToken(t, body)
+	_, _, _ = postForm(t, client, ts.URL+"/auth/bootstrap", url.Values{
+		"gorilla.csrf.Token": {token},
+		"email":              {"admin@example.com"},
+		"password":           {"correcthorse"},
+	})
+
+	// No scope configured — every IP is out of scope.
+	_, body = getBody(t, client, ts.URL+"/host/10.0.0.99")
+	token = extractCSRFToken(t, body)
+
+	_, _, _ = postForm(t, client, ts.URL+"/host/10.0.0.99/rescan", url.Values{
+		"gorilla.csrf.Token": {token},
+	})
+	if _, err := store.RescanTaskNextPending(context.Background()); err == nil {
+		t.Fatalf("rescan request for out-of-scope target should NOT have created a row")
+	}
+}
+
 func TestLogoutClearsSession(t *testing.T) {
 	ts, client, _ := startServer(t)
 

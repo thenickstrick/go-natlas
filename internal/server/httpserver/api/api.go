@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/netip"
 
@@ -123,9 +124,10 @@ func (h *Handlers) GetWork(w http.ResponseWriter, r *http.Request) {
 
 	// Dispatch the rescan only after all pre-checks succeed; otherwise a
 	// failed config lookup would leave the row marked dispatched with no work
-	// actually on the wire.
+	// actually on the wire. We persist the scan_id at dispatch time so the
+	// later POST /api/v1/results call can complete the task by scan_id alone.
 	if rescanID != 0 {
-		if err := h.Store.RescanTaskDispatch(ctx, rescanID); err != nil {
+		if err := h.Store.RescanTaskDispatch(ctx, rescanID, scanID); err != nil {
 			writeErr(w, http.StatusInternalServerError, fmt.Sprintf("rescan dispatch: %v", err), true)
 			return
 		}
@@ -193,7 +195,14 @@ func (h *Handlers) PostResults(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// TODO(phase-7): mark matching rescan_task complete + write scan_id back.
+	// If this scan satisfies a pending rescan, close it out. We don't fail
+	// the whole submission if completion fails — the result is already
+	// indexed; the rescan row will eventually be reaped if it stays stuck.
+	if result.ScanReason == protocol.ScanReasonRequested {
+		if _, err := h.Store.RescanTaskCompleteByScanID(r.Context(), result.ScanID); err != nil {
+			slog.WarnContext(r.Context(), "rescan complete failed", "scan_id", result.ScanID, "err", err)
+		}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":     "accepted",

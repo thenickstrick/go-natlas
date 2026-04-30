@@ -23,12 +23,23 @@ type Querier interface {
 	AgentTouchLastSeen(ctx context.Context, id int64) error
 	NatlasServicesGet(ctx context.Context) (NatlasService, error)
 	NatlasServicesUpdate(ctx context.Context, arg NatlasServicesUpdateParams) error
-	RescanTaskComplete(ctx context.Context, arg RescanTaskCompleteParams) error
+	// RescanTaskCompleteByScanID closes out the rescan whose scan_id matches the
+	// submitted result. completed_at IS NULL guard prevents double-completion if
+	// the same result is submitted twice.
+	RescanTaskCompleteByScanID(ctx context.Context, scanID pgtype.Text) (int64, error)
 	RescanTaskCreate(ctx context.Context, arg RescanTaskCreateParams) (RescanTask, error)
-	RescanTaskDispatch(ctx context.Context, id int64) error
+	// RescanTaskDispatch records the dispatch event AND the scan_id minted for it.
+	// The scan_id is the link that lets a later POST /api/v1/results find this row
+	// without an additional query, via RescanTaskCompleteByScanID below.
+	RescanTaskDispatch(ctx context.Context, arg RescanTaskDispatchParams) error
 	RescanTaskGetByID(ctx context.Context, id int64) (RescanTask, error)
 	RescanTaskListForUser(ctx context.Context, arg RescanTaskListForUserParams) ([]RescanTask, error)
 	RescanTaskNextPending(ctx context.Context) (RescanTask, error)
+	// RescanTaskReapStale clears the dispatch state on tasks that were dispatched
+	// but never reported back. The scan_id is also cleared so that a fresh
+	// dispatch is free to mint a new one — a late-arriving result for the old
+	// scan_id has nothing to match and is silently ignored at the rescan layer
+	// (the result still indexes into OpenSearch via the regular submission flow).
 	RescanTaskReapStale(ctx context.Context, dispatchedAt pgtype.Timestamptz) ([]int64, error)
 	ScopeItemAddTag(ctx context.Context, arg ScopeItemAddTagParams) error
 	ScopeItemCreate(ctx context.Context, arg ScopeItemCreateParams) (ScopeItem, error)

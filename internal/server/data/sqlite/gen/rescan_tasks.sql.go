@@ -10,20 +10,18 @@ import (
 	"database/sql"
 )
 
-const rescanTaskComplete = `-- name: RescanTaskComplete :exec
+const rescanTaskCompleteByScanID = `-- name: RescanTaskCompleteByScanID :execrows
 UPDATE rescan_tasks
-SET completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), scan_id = ?
-WHERE id = ?
+SET completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE scan_id = ? AND completed_at IS NULL
 `
 
-type RescanTaskCompleteParams struct {
-	ScanID sql.NullString
-	ID     int64
-}
-
-func (q *Queries) RescanTaskComplete(ctx context.Context, arg RescanTaskCompleteParams) error {
-	_, err := q.db.ExecContext(ctx, rescanTaskComplete, arg.ScanID, arg.ID)
-	return err
+func (q *Queries) RescanTaskCompleteByScanID(ctx context.Context, scanID sql.NullString) (int64, error) {
+	result, err := q.db.ExecContext(ctx, rescanTaskCompleteByScanID, scanID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const rescanTaskCreate = `-- name: RescanTaskCreate :one
@@ -53,11 +51,18 @@ func (q *Queries) RescanTaskCreate(ctx context.Context, arg RescanTaskCreatePara
 }
 
 const rescanTaskDispatch = `-- name: RescanTaskDispatch :exec
-UPDATE rescan_tasks SET dispatched_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?
+UPDATE rescan_tasks
+SET dispatched_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), scan_id = ?
+WHERE id = ?
 `
 
-func (q *Queries) RescanTaskDispatch(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, rescanTaskDispatch, id)
+type RescanTaskDispatchParams struct {
+	ScanID sql.NullString
+	ID     int64
+}
+
+func (q *Queries) RescanTaskDispatch(ctx context.Context, arg RescanTaskDispatchParams) error {
+	_, err := q.db.ExecContext(ctx, rescanTaskDispatch, arg.ScanID, arg.ID)
 	return err
 }
 
@@ -128,8 +133,8 @@ ORDER BY created_at ASC
 LIMIT 1
 `
 
-// SQLite has no FOR UPDATE SKIP LOCKED; transaction-level BEGIN IMMEDIATE and
-// the pending_idx give us the same guarantee with only serialized writers.
+// SQLite has no FOR UPDATE SKIP LOCKED; serialize writes via BEGIN IMMEDIATE
+// transactions at the application layer instead. The pending_idx covers this.
 func (q *Queries) RescanTaskNextPending(ctx context.Context) (RescanTask, error) {
 	row := q.db.QueryRowContext(ctx, rescanTaskNextPending)
 	var i RescanTask
@@ -147,7 +152,7 @@ func (q *Queries) RescanTaskNextPending(ctx context.Context) (RescanTask, error)
 
 const rescanTaskReapStale = `-- name: RescanTaskReapStale :many
 UPDATE rescan_tasks
-SET dispatched_at = NULL
+SET dispatched_at = NULL, scan_id = NULL
 WHERE dispatched_at IS NOT NULL
   AND completed_at IS NULL
   AND dispatched_at < ?

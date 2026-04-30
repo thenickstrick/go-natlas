@@ -5,8 +5,14 @@
     <h1 class="h3 mb-1">{{.IP}}</h1>
     <div class="text-muted">{{.Hostname}}</div>
   </div>
-  <div class="text-muted small">
-    Last scan {{.ScanStop.Format "2006-01-02 15:04"}} · {{.ElapsedS}}s elapsed
+  <div class="text-end">
+    <div class="text-muted small mb-1">
+      Last scan {{.ScanStop.Format "2006-01-02 15:04"}} · {{.ElapsedS}}s elapsed
+    </div>
+    <form method="POST" action="/host/{{.IP}}/rescan" class="d-inline">
+      <input type="hidden" name="gorilla.csrf.Token" value="{{$.CSRFToken}}">
+      <button type="submit" class="btn btn-sm btn-outline-primary">Request rescan</button>
+    </form>
   </div>
 </div>
 

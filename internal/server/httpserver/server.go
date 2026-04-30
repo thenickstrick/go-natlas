@@ -141,6 +141,7 @@ func mountWebRoutes(r chi.Router, cfg *config.Server, deps Deps) {
 			r.Use(sessions.RequireAuth())
 			r.Get("/browse", webH.Browse)
 			r.Get("/host/{ip}", webH.Host)
+			r.Post("/host/{ip}/rescan", webH.HostRescan)
 			r.Get("/status", webH.Status)
 		})
 

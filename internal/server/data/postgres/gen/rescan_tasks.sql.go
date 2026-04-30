@@ -12,18 +12,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const rescanTaskComplete = `-- name: RescanTaskComplete :exec
-UPDATE rescan_tasks SET completed_at = NOW(), scan_id = $2 WHERE id = $1
+const rescanTaskCompleteByScanID = `-- name: RescanTaskCompleteByScanID :execrows
+UPDATE rescan_tasks
+SET completed_at = NOW()
+WHERE scan_id = $1 AND completed_at IS NULL
 `
 
-type RescanTaskCompleteParams struct {
-	ID     int64
-	ScanID pgtype.Text
-}
-
-func (q *Queries) RescanTaskComplete(ctx context.Context, arg RescanTaskCompleteParams) error {
-	_, err := q.db.Exec(ctx, rescanTaskComplete, arg.ID, arg.ScanID)
-	return err
+// RescanTaskCompleteByScanID closes out the rescan whose scan_id matches the
+// submitted result. completed_at IS NULL guard prevents double-completion if
+// the same result is submitted twice.
+func (q *Queries) RescanTaskCompleteByScanID(ctx context.Context, scanID pgtype.Text) (int64, error) {
+	result, err := q.db.Exec(ctx, rescanTaskCompleteByScanID, scanID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const rescanTaskCreate = `-- name: RescanTaskCreate :one
@@ -53,11 +56,21 @@ func (q *Queries) RescanTaskCreate(ctx context.Context, arg RescanTaskCreatePara
 }
 
 const rescanTaskDispatch = `-- name: RescanTaskDispatch :exec
-UPDATE rescan_tasks SET dispatched_at = NOW() WHERE id = $1
+UPDATE rescan_tasks
+SET dispatched_at = NOW(), scan_id = $2
+WHERE id = $1
 `
 
-func (q *Queries) RescanTaskDispatch(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, rescanTaskDispatch, id)
+type RescanTaskDispatchParams struct {
+	ID     int64
+	ScanID pgtype.Text
+}
+
+// RescanTaskDispatch records the dispatch event AND the scan_id minted for it.
+// The scan_id is the link that lets a later POST /api/v1/results find this row
+// without an additional query, via RescanTaskCompleteByScanID below.
+func (q *Queries) RescanTaskDispatch(ctx context.Context, arg RescanTaskDispatchParams) error {
+	_, err := q.db.Exec(ctx, rescanTaskDispatch, arg.ID, arg.ScanID)
 	return err
 }
 
@@ -143,13 +156,18 @@ func (q *Queries) RescanTaskNextPending(ctx context.Context) (RescanTask, error)
 
 const rescanTaskReapStale = `-- name: RescanTaskReapStale :many
 UPDATE rescan_tasks
-SET dispatched_at = NULL
+SET dispatched_at = NULL, scan_id = NULL
 WHERE dispatched_at IS NOT NULL
   AND completed_at IS NULL
   AND dispatched_at < $1
 RETURNING id
 `
 
+// RescanTaskReapStale clears the dispatch state on tasks that were dispatched
+// but never reported back. The scan_id is also cleared so that a fresh
+// dispatch is free to mint a new one — a late-arriving result for the old
+// scan_id has nothing to match and is silently ignored at the rescan layer
+// (the result still indexes into OpenSearch via the regular submission flow).
 func (q *Queries) RescanTaskReapStale(ctx context.Context, dispatchedAt pgtype.Timestamptz) ([]int64, error) {
 	rows, err := q.db.Query(ctx, rescanTaskReapStale, dispatchedAt)
 	if err != nil {

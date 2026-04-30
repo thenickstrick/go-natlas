@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -146,7 +147,8 @@ func TestGetWorkRescanTakesPriority(t *testing.T) {
 		t.Fatalf("UserCreate: %v", err)
 	}
 	rescanTarget := netip.MustParseAddr("10.0.0.2")
-	if _, err := store.RescanTaskCreate(context.Background(), user.ID, rescanTarget); err != nil {
+	created, err := store.RescanTaskCreate(context.Background(), user.ID, rescanTarget)
+	if err != nil {
 		t.Fatalf("RescanTaskCreate: %v", err)
 	}
 
@@ -164,10 +166,77 @@ func TestGetWorkRescanTakesPriority(t *testing.T) {
 		t.Errorf("Target: got %q, want 10.0.0.2", work.Target)
 	}
 
-	// Rescan row should now be marked dispatched.
-	task, err := store.RescanTaskNextPending(context.Background())
-	if err == nil {
-		t.Errorf("RescanTaskNextPending should return ErrNotFound after dispatch; got %+v", task)
+	// Rescan row should now be marked dispatched and carry the scan_id we
+	// just minted on the wire — that's the link the result handler uses to
+	// complete the task without an extra round-trip through the agent.
+	task, err := store.RescanTaskGetByID(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("RescanTaskGetByID: %v", err)
+	}
+	if task.DispatchedAt == nil {
+		t.Errorf("dispatched_at not set after GetWork")
+	}
+	if task.ScanID == nil || *task.ScanID != work.ScanID {
+		t.Errorf("scan_id mismatch: row=%v wire=%q", task.ScanID, work.ScanID)
+	}
+	if _, err := store.RescanTaskNextPending(context.Background()); err == nil {
+		t.Errorf("RescanTaskNextPending should be empty after dispatch")
+	}
+}
+
+// Full rescan loop: GET /work returns a requested scan_id; POST /results with
+// that scan_id flips completed_at on the rescan_task. This is the contract
+// Phase 7 introduces.
+func TestRescanLoopCompletes(t *testing.T) {
+	entries := []scope.Entry{{CIDR: netip.MustParsePrefix("10.0.0.0/30")}}
+	ts, store := newTestServer(t, entries)
+
+	user, err := store.UserCreate(context.Background(), data.UserCreateParams{
+		Email: "u@example.com", PasswordHash: "x", IsActive: true,
+	})
+	if err != nil {
+		t.Fatalf("UserCreate: %v", err)
+	}
+	created, err := store.RescanTaskCreate(context.Background(), user.ID, netip.MustParseAddr("10.0.0.2"))
+	if err != nil {
+		t.Fatalf("RescanTaskCreate: %v", err)
+	}
+
+	// 1. Fetch work — picks up the rescan and stamps it dispatched.
+	resp, err := http.Get(ts.URL + "/api/v1/work")
+	if err != nil {
+		t.Fatalf("GET work: %v", err)
+	}
+	var work protocol.WorkItem
+	_ = json.NewDecoder(resp.Body).Decode(&work)
+	_ = resp.Body.Close()
+
+	// 2. Submit a result echoing the dispatched scan_id + ScanReasonRequested.
+	result := &protocol.Result{
+		ScanID:     work.ScanID,
+		Target:     work.Target,
+		ScanReason: protocol.ScanReasonRequested,
+		IsUp:       true,
+		PortCount:  1,
+	}
+	body, _ := json.Marshal(result)
+	post, err := http.Post(ts.URL+"/api/v1/results", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST results: %v", err)
+	}
+	if post.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(post.Body)
+		t.Fatalf("POST results: status %d: %s", post.StatusCode, string(raw))
+	}
+	_ = post.Body.Close()
+
+	// 3. The task should now be complete.
+	task, err := store.RescanTaskGetByID(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("RescanTaskGetByID: %v", err)
+	}
+	if task.CompletedAt == nil {
+		t.Fatalf("completed_at not set after result submission; row=%+v", task)
 	}
 }
 

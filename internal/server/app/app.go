@@ -28,6 +28,7 @@ import (
 	"github.com/thenickstrick/go-natlas/internal/config"
 	"github.com/thenickstrick/go-natlas/internal/server/data"
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver"
+	"github.com/thenickstrick/go-natlas/internal/server/rescan"
 	"github.com/thenickstrick/go-natlas/internal/server/scope"
 	"github.com/thenickstrick/go-natlas/internal/server/search"
 	"github.com/thenickstrick/go-natlas/internal/server/sessions"
@@ -43,6 +44,7 @@ type App struct {
 	s3       *minio.Client
 	sessions *sessions.Manager
 	views    *views.Renderer
+	reaper   *rescan.Reaper
 	version  string
 	httpSrv  *http.Server
 }
@@ -81,6 +83,7 @@ func New(ctx context.Context, cfg *config.Server, opts NewOpts) (*App, error) {
 		a.close()
 		return nil, err
 	}
+	a.reaper = rescan.New(a.store, rescan.Options{})
 
 	a.httpSrv = httpserver.New(cfg, httpserver.Deps{
 		Store:    a.store,
@@ -109,12 +112,19 @@ func (a *App) initWeb() error {
 	return nil
 }
 
-// Run starts the HTTP listener and blocks until ctx is cancelled or the
-// listener returns an error. On shutdown, in-flight requests drain within
-// 10 seconds and every backing client is closed.
+// Run starts the HTTP listener and the rescan reaper, then blocks until ctx
+// is cancelled or the listener returns an error. On shutdown, in-flight
+// requests drain within 10 seconds and every backing client is closed.
 func (a *App) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- a.httpSrv.ListenAndServe() }()
+
+	// Reaper runs for the same lifetime as the HTTP server. Its only exit
+	// path is ctx cancellation; transient sweep errors are logged and
+	// retried at the next tick.
+	if a.reaper != nil {
+		go func() { _ = a.reaper.Run(ctx) }()
+	}
 
 	select {
 	case <-ctx.Done():

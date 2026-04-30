@@ -307,6 +307,14 @@ func (s *postgresStore) RescanTaskCreate(ctx context.Context, userID int64, targ
 	return pgRescanToDomain(row), nil
 }
 
+func (s *postgresStore) RescanTaskGetByID(ctx context.Context, id int64) (RescanTask, error) {
+	row, err := s.q.RescanTaskGetByID(ctx, id)
+	if err != nil {
+		return RescanTask{}, pgMapNotFound(err)
+	}
+	return pgRescanToDomain(row), nil
+}
+
 func (s *postgresStore) RescanTaskNextPending(ctx context.Context) (RescanTask, error) {
 	row, err := s.q.RescanTaskNextPending(ctx)
 	if err != nil {
@@ -315,19 +323,33 @@ func (s *postgresStore) RescanTaskNextPending(ctx context.Context) (RescanTask, 
 	return pgRescanToDomain(row), nil
 }
 
-func (s *postgresStore) RescanTaskDispatch(ctx context.Context, id int64) error {
-	return s.q.RescanTaskDispatch(ctx, id)
-}
-
-func (s *postgresStore) RescanTaskComplete(ctx context.Context, id int64, scanID string) error {
-	return s.q.RescanTaskComplete(ctx, pgen.RescanTaskCompleteParams{
+func (s *postgresStore) RescanTaskDispatch(ctx context.Context, id int64, scanID string) error {
+	return s.q.RescanTaskDispatch(ctx, pgen.RescanTaskDispatchParams{
 		ID:     id,
 		ScanID: pgtype.Text{String: scanID, Valid: true},
 	})
 }
 
+func (s *postgresStore) RescanTaskCompleteByScanID(ctx context.Context, scanID string) (int64, error) {
+	return s.q.RescanTaskCompleteByScanID(ctx, pgtype.Text{String: scanID, Valid: true})
+}
+
 func (s *postgresStore) RescanTaskReapStale(ctx context.Context, before time.Time) ([]int64, error) {
 	return s.q.RescanTaskReapStale(ctx, pgtype.Timestamptz{Time: before, Valid: true})
+}
+
+func (s *postgresStore) RescanTaskListForUser(ctx context.Context, userID int64, limit, offset int32) ([]RescanTask, error) {
+	rows, err := s.q.RescanTaskListForUser(ctx, pgen.RescanTaskListForUserParams{
+		UserID: userID, Limit: limit, Offset: offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RescanTask, len(rows))
+	for i, r := range rows {
+		out[i] = pgRescanToDomain(r)
+	}
+	return out, nil
 }
 
 // -----------------------------------------------------------------------------

@@ -22,13 +22,13 @@ type Querier interface {
 	AgentTouchLastSeen(ctx context.Context, id int64) error
 	NatlasServicesGet(ctx context.Context) (NatlasService, error)
 	NatlasServicesUpdate(ctx context.Context, arg NatlasServicesUpdateParams) error
-	RescanTaskComplete(ctx context.Context, arg RescanTaskCompleteParams) error
+	RescanTaskCompleteByScanID(ctx context.Context, scanID sql.NullString) (int64, error)
 	RescanTaskCreate(ctx context.Context, arg RescanTaskCreateParams) (RescanTask, error)
-	RescanTaskDispatch(ctx context.Context, id int64) error
+	RescanTaskDispatch(ctx context.Context, arg RescanTaskDispatchParams) error
 	RescanTaskGetByID(ctx context.Context, id int64) (RescanTask, error)
 	RescanTaskListForUser(ctx context.Context, arg RescanTaskListForUserParams) ([]RescanTask, error)
-	// SQLite has no FOR UPDATE SKIP LOCKED; transaction-level BEGIN IMMEDIATE and
-	// the pending_idx give us the same guarantee with only serialized writers.
+	// SQLite has no FOR UPDATE SKIP LOCKED; serialize writes via BEGIN IMMEDIATE
+	// transactions at the application layer instead. The pending_idx covers this.
 	RescanTaskNextPending(ctx context.Context) (RescanTask, error)
 	RescanTaskReapStale(ctx context.Context, dispatchedAt sql.NullString) ([]int64, error)
 	ScopeItemAddTag(ctx context.Context, arg ScopeItemAddTagParams) error
