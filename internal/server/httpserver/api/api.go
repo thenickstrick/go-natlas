@@ -21,16 +21,19 @@ import (
 
 	"github.com/thenickstrick/go-natlas/internal/protocol"
 	"github.com/thenickstrick/go-natlas/internal/server/data"
+	"github.com/thenickstrick/go-natlas/internal/server/objectstore"
 	"github.com/thenickstrick/go-natlas/internal/server/scope"
 	"github.com/thenickstrick/go-natlas/internal/server/search"
 )
 
 // Handlers holds dependencies for the /api/v1 routes. It is intentionally
-// small: most heavy lifting lives in the Store, ScopeManager, and Searcher.
+// small: most heavy lifting lives in the Store, ScopeManager, Searcher, and
+// the object store (screenshots only).
 type Handlers struct {
 	Store    data.Store
 	Scope    *scope.ScopeManager
 	Searcher search.Searcher
+	Objects  objectstore.Client
 	Version  string // server version echoed into logs, not to clients
 }
 

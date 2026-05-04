@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/thenickstrick/go-natlas/internal/server/data"
+	"github.com/thenickstrick/go-natlas/internal/server/objectstore"
 	"github.com/thenickstrick/go-natlas/internal/server/scope"
 	"github.com/thenickstrick/go-natlas/internal/server/search"
 	"github.com/thenickstrick/go-natlas/internal/server/sessions"
@@ -25,6 +26,7 @@ type Handlers struct {
 	Store    data.Store
 	Scope    *scope.ScopeManager
 	Searcher search.Searcher
+	Objects  objectstore.Client
 	Sessions *sessions.Manager
 	Views    *views.Renderer
 	Version  string

@@ -78,6 +78,21 @@ type Result struct {
 	NmapData     string    `json:"nmap_data,omitempty"`
 	XMLData      string    `json:"xml_data,omitempty"`
 	GNmapData    string    `json:"gnmap_data,omitempty"`
+
+	// Screenshots is metadata only — the binary blobs are uploaded out of
+	// band via POST /api/v1/screenshots/{scan_id}. The agent fills this in
+	// after a successful upload so the indexed document carries the hashes.
+	Screenshots []Screenshot `json:"screenshots,omitempty"`
+}
+
+// Screenshot describes a single captured image's relationship to the scan.
+// The binary is stored in the object store keyed by Hash; the server's
+// /media/{hash} handler serves it back to the UI.
+type Screenshot struct {
+	Host    string `json:"host,omitempty"`
+	Port    int    `json:"port,omitempty"`
+	Service string `json:"service,omitempty"` // "HTTP" | "HTTPS" | "VNC"
+	Hash    string `json:"hash,omitempty"`    // sha256 hex of the PNG bytes
 }
 
 // Port describes a single port's scan outcome.

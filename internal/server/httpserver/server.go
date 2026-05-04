@@ -19,7 +19,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/gorilla/csrf"
-	"github.com/minio/minio-go/v7"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/thenickstrick/go-natlas/internal/config"
@@ -28,6 +27,7 @@ import (
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver/api"
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver/auth"
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver/web"
+	"github.com/thenickstrick/go-natlas/internal/server/objectstore"
 	"github.com/thenickstrick/go-natlas/internal/server/scope"
 	"github.com/thenickstrick/go-natlas/internal/server/search"
 	"github.com/thenickstrick/go-natlas/internal/server/sessions"
@@ -39,7 +39,7 @@ type Deps struct {
 	Store    data.Store
 	Scope    *scope.ScopeManager
 	Searcher search.Searcher
-	S3       *minio.Client
+	Objects  objectstore.Client
 	Sessions *sessions.Manager
 	Views    *views.Renderer
 	Version  string
@@ -61,11 +61,17 @@ func New(cfg *config.Server, deps Deps) *http.Server {
 	r.Handle("/static/*", http.StripPrefix("/static/", assets.Handler()))
 
 	// Agent API (JSON, bearer auth, CSRF-exempt).
-	apiHandlers := &api.Handlers{Store: deps.Store, Scope: deps.Scope, Searcher: deps.Searcher}
+	apiHandlers := &api.Handlers{
+		Store:    deps.Store,
+		Scope:    deps.Scope,
+		Searcher: deps.Searcher,
+		Objects:  deps.Objects,
+	}
 	r.Route("/api/v1", func(apiR chi.Router) {
 		apiR.Use(auth.AgentAuth(deps.Store, cfg.AgentAuthRequired))
 		apiR.Get("/work", apiHandlers.GetWork)
 		apiR.Post("/results", apiHandlers.PostResults)
+		apiR.Post("/screenshots/{scan_id}", apiHandlers.PostScreenshots)
 		apiR.Get("/services", apiHandlers.GetServices)
 	})
 
@@ -118,7 +124,8 @@ func mountWebRoutes(r chi.Router, cfg *config.Server, deps Deps) {
 	authH := &auth.WebHandlers{Store: deps.Store, Sessions: deps.Sessions, Views: deps.Views}
 	webH := &web.Handlers{
 		Store: deps.Store, Scope: deps.Scope, Searcher: deps.Searcher,
-		Sessions: deps.Sessions, Views: deps.Views, Version: deps.Version,
+		Objects: deps.Objects, Sessions: deps.Sessions, Views: deps.Views,
+		Version: deps.Version,
 	}
 
 	r.Group(func(rWeb chi.Router) {
@@ -143,6 +150,7 @@ func mountWebRoutes(r chi.Router, cfg *config.Server, deps Deps) {
 			r.Get("/host/{ip}", webH.Host)
 			r.Post("/host/{ip}/rescan", webH.HostRescan)
 			r.Get("/status", webH.Status)
+			r.Get("/media/{filename}", webH.Media)
 		})
 
 		// Admin-only.

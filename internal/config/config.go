@@ -99,6 +99,14 @@ type Agent struct {
 	LogLevel       string        `envconfig:"LOG_LEVEL" default:"info"`
 	LogFormat      string        `envconfig:"LOG_FORMAT" default:"json"`
 
+	// Screenshot capture controls. The dispatcher's per-scan AgentConfig
+	// (web/vncScreenshots flags + timeouts) ultimately gates *whether* a
+	// given scan gets shot; these settings configure the agent-side
+	// transports that do the work when it is.
+	WebScreenshotsEnabled  bool          `envconfig:"NATLAS_WEB_SCREENSHOTS" default:"true"`
+	WebScreenshotTimeout   time.Duration `envconfig:"NATLAS_WEB_SCREENSHOT_TIMEOUT" default:"60s"`
+	ChromePath             string        `envconfig:"CHROMEDP_PATH"`
+
 	OTel OTel
 }
 

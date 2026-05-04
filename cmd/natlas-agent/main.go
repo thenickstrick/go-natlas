@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/thenickstrick/go-natlas/internal/agent/scanner"
+	"github.com/thenickstrick/go-natlas/internal/agent/screenshots"
+	webshots "github.com/thenickstrick/go-natlas/internal/agent/screenshots/web"
 	"github.com/thenickstrick/go-natlas/internal/agent/submit"
 	"github.com/thenickstrick/go-natlas/internal/agent/worker"
 	"github.com/thenickstrick/go-natlas/internal/config"
@@ -72,13 +74,28 @@ func run() int {
 
 	sc := scanner.New("" /* nmap from PATH */, "" /* no custom services yet */, cfg.DataDir)
 
-	pool := worker.New(worker.Config{
+	// Optional screenshot orchestrator. The web transport is bootstrapped
+	// lazily on first capture, so disabling it here costs nothing and
+	// keeps the no-Chrome path fast.
+	var ss worker.Screenshotter
+	if cfg.WebScreenshotsEnabled {
+		web := webshots.New(webshots.Options{
+			ChromePath:     cfg.ChromePath,
+			CaptureTimeout: cfg.WebScreenshotTimeout,
+		})
+		defer web.Close()
+		ss = &screenshots.Orchestrator{Web: web}
+		slog.InfoContext(ctx, "agent: web screenshots enabled",
+			"chrome_path", cfg.ChromePath, "timeout", cfg.WebScreenshotTimeout)
+	}
+
+	pool := worker.NewWithScreenshots(worker.Config{
 		MaxWorkers:     cfg.MaxWorkers,
 		AgentVersion:   Version,
 		AgentIDLogTag:  orDefault(cfg.AgentID, "anonymous"),
 		PollBackoff:    2 * time.Second,
 		PollBackoffMax: time.Minute,
-	}, client, sc)
+	}, client, sc, ss)
 
 	slog.InfoContext(ctx, "natlas-agent starting",
 		"version", Version,

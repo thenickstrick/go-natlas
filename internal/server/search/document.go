@@ -34,6 +34,21 @@ func FromResult(r *protocol.Result) Document {
 		XMLData:      r.XMLData,
 		GNmapData:    r.GNmapData,
 	}
+	if len(r.Screenshots) > 0 {
+		doc.Screenshots = make([]Screenshot, len(r.Screenshots))
+		for i, s := range r.Screenshots {
+			host := s.Host
+			if host == "" {
+				host = r.Target
+			}
+			doc.Screenshots[i] = Screenshot{
+				Host:    host,
+				Port:    s.Port,
+				Service: s.Service,
+				Hash:    s.Hash,
+			}
+		}
+	}
 	if len(r.Ports) > 0 {
 		doc.Ports = make([]Port, len(r.Ports))
 		for i, p := range r.Ports {

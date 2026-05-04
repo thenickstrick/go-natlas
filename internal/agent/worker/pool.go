@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thenickstrick/go-natlas/internal/agent/screenshots"
 	"github.com/thenickstrick/go-natlas/internal/agent/submit"
 	"github.com/thenickstrick/go-natlas/internal/protocol"
 )
@@ -20,6 +21,12 @@ import (
 // interface so tests can inject stubs without invoking nmap.
 type Scanner interface {
 	Scan(ctx context.Context, work *protocol.WorkItem) (*protocol.Result, error)
+}
+
+// Screenshotter captures screenshots for the open ports of a finished scan.
+// nil disables screenshot capture entirely (the pool just skips that step).
+type Screenshotter interface {
+	Capture(ctx context.Context, target string, ports []protocol.Port) []screenshots.Captured
 }
 
 // Config captures the runtime knobs the pool needs. The fields here are a
@@ -34,13 +41,21 @@ type Config struct {
 
 // Pool glues the HTTP client to the scanner via a bounded work channel.
 type Pool struct {
-	cfg     Config
-	client  *submit.Client
-	scanner Scanner
+	cfg           Config
+	client        *submit.Client
+	scanner       Scanner
+	screenshotter Screenshotter
 }
 
-// New returns a Pool. Call Run to start it.
+// New returns a Pool with no screenshotter; use NewWithScreenshots to attach
+// one. Splitting them keeps the simple-case constructor short.
 func New(cfg Config, client *submit.Client, sc Scanner) *Pool {
+	return NewWithScreenshots(cfg, client, sc, nil)
+}
+
+// NewWithScreenshots is identical to New but attaches a Screenshotter. Pass
+// nil to disable screenshot capture (equivalent to New).
+func NewWithScreenshots(cfg Config, client *submit.Client, sc Scanner, ss Screenshotter) *Pool {
 	if cfg.MaxWorkers < 1 {
 		cfg.MaxWorkers = 1
 	}
@@ -53,7 +68,7 @@ func New(cfg Config, client *submit.Client, sc Scanner) *Pool {
 	if cfg.AgentIDLogTag == "" {
 		cfg.AgentIDLogTag = "anonymous"
 	}
-	return &Pool{cfg: cfg, client: client, scanner: sc}
+	return &Pool{cfg: cfg, client: client, scanner: sc, screenshotter: ss}
 }
 
 // Run starts the poller + workers and blocks until ctx is cancelled. Returns
@@ -158,6 +173,30 @@ func (p *Pool) executeOne(ctx context.Context, workerID int, work *protocol.Work
 	result.Tags = work.Tags
 	result.Agent = p.cfg.AgentIDLogTag
 	result.AgentVersion = p.cfg.AgentVersion
+
+	// Optional: capture + upload screenshots, then attach metadata to the
+	// result before submitting. Failures here log and degrade — the scan
+	// result still goes out, just without imagery.
+	if p.screenshotter != nil && result.IsUp && len(result.Ports) > 0 {
+		shots := p.screenshotter.Capture(ctx, result.Target, result.Ports)
+		if len(shots) > 0 {
+			parts := make([]submit.ScreenshotPart, len(shots))
+			for i, s := range shots {
+				parts[i] = submit.ScreenshotPart{Port: s.Port, Service: s.Service, Hash: s.Hash, Data: s.Data}
+			}
+			upCtx, cancelUp := context.WithTimeout(ctx, 2*time.Minute)
+			if _, err := p.client.UploadScreenshots(upCtx, work.ScanID, parts); err != nil {
+				slog.WarnContext(ctx, "agent: screenshot upload failed", "scan_id", work.ScanID, "err", err)
+			} else {
+				for _, s := range shots {
+					result.Screenshots = append(result.Screenshots, protocol.Screenshot{
+						Host: result.Target, Port: s.Port, Service: s.Service, Hash: s.Hash,
+					})
+				}
+			}
+			cancelUp()
+		}
+	}
 
 	submitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()

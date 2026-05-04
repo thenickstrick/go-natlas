@@ -28,6 +28,7 @@ import (
 	"github.com/thenickstrick/go-natlas/internal/config"
 	"github.com/thenickstrick/go-natlas/internal/server/data"
 	"github.com/thenickstrick/go-natlas/internal/server/httpserver"
+	"github.com/thenickstrick/go-natlas/internal/server/objectstore"
 	"github.com/thenickstrick/go-natlas/internal/server/rescan"
 	"github.com/thenickstrick/go-natlas/internal/server/scope"
 	"github.com/thenickstrick/go-natlas/internal/server/search"
@@ -41,7 +42,7 @@ type App struct {
 	store    data.Store
 	scope    *scope.ScopeManager
 	searcher search.Searcher
-	s3       *minio.Client
+	objects  objectstore.Client
 	sessions *sessions.Manager
 	views    *views.Renderer
 	reaper   *rescan.Reaper
@@ -89,7 +90,7 @@ func New(ctx context.Context, cfg *config.Server, opts NewOpts) (*App, error) {
 		Store:    a.store,
 		Scope:    a.scope,
 		Searcher: a.searcher,
-		S3:       a.s3,
+		Objects:  a.objects,
 		Sessions: a.sessions,
 		Views:    a.views,
 		Version:  a.version,
@@ -288,7 +289,7 @@ func (a *App) initObjectStore(ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("s3 bucket %q does not exist (run `make garage-bootstrap` or equivalent)", a.cfg.ObjectStore.Bucket)
 	}
-	a.s3 = s3
+	a.objects = objectstore.NewMinIO(s3, a.cfg.ObjectStore.Bucket)
 	slog.InfoContext(ctx, "object store connected",
 		"endpoint", a.cfg.ObjectStore.Endpoint,
 		"bucket", a.cfg.ObjectStore.Bucket,

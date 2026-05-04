@@ -40,6 +40,24 @@
 </table>
 {{end}}
 
+{{if .Screenshots}}
+<h2 class="h5 mt-4">Screenshots</h2>
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+  {{range .Screenshots}}
+    <div class="col">
+      <div class="card h-100">
+        <a href="/media/{{.Hash}}.png" target="_blank">
+          <img src="/media/{{.Hash}}.png" alt="{{.Service}} on port {{.Port}}" class="card-img-top" loading="lazy">
+        </a>
+        <div class="card-body py-2">
+          <div class="small text-muted">{{.Service}} · port {{.Port}}</div>
+        </div>
+      </div>
+    </div>
+  {{end}}
+</div>
+{{end}}
+
 {{if .NmapData}}
 <details class="mt-4">
   <summary class="text-muted small">Raw nmap output</summary>
