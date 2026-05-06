@@ -19,7 +19,13 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+var tracer = otel.Tracer("natlas/agent/screenshots/web")
 
 // Options configures the chromedp capturer.
 type Options struct {
@@ -99,8 +105,19 @@ func (c *Capturer) Capture(ctx context.Context, target string, port int, service
 		return nil, fmt.Errorf("web capturer: unsupported service %q", service)
 	}
 
+	ctx, span := tracer.Start(ctx, "screenshot.web",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("target", target),
+			attribute.Int("port", port),
+			attribute.String("service", service),
+		),
+	)
+	defer span.End()
+
 	c.once.Do(c.bootstrap)
 	if c.initErr != nil {
+		span.SetStatus(codes.Error, c.initErr.Error())
 		return nil, c.initErr
 	}
 
@@ -125,10 +142,14 @@ func (c *Capturer) Capture(ctx context.Context, target string, port int, service
 	)
 	if err != nil {
 		if errors.Is(captureCtx.Err(), context.DeadlineExceeded) {
+			span.SetStatus(codes.Error, "timeout")
 			return nil, fmt.Errorf("web capturer: timeout after %s on %s", c.opts.CaptureTimeout, url)
 		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("web capturer: %w", err)
 	}
+	span.SetAttributes(attribute.Int("png_bytes", len(buf)))
 	return buf, nil
 }
 

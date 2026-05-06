@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,8 +27,17 @@ type postgresStore struct {
 // NewPostgresStore builds a Store against the given connection string. It
 // opens the pgx connection pool, runs a Ping to fail fast on bad configs, and
 // applies outstanding migrations before returning.
+//
+// otelpgx is wired as the pool's tracer so every query emits a child span
+// under whatever request span is on the context. The trace shows up in
+// Jaeger as a sibling under the inbound HTTP span.
 func NewPostgresStore(ctx context.Context, url string) (Store, error) {
-	pool, err := pgxpool.New(ctx, url)
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: parse config: %w", err)
+	}
+	cfg.ConnConfig.Tracer = otelpgx.NewTracer()
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: pool: %w", err)
 	}

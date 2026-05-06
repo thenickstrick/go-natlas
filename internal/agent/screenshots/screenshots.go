@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/thenickstrick/go-natlas/internal/metrics"
 	"github.com/thenickstrick/go-natlas/internal/protocol"
 )
 
@@ -81,6 +82,7 @@ func (o *Orchestrator) Capture(ctx context.Context, target string, ports []proto
 			Data:    data,
 			Hash:    hex.EncodeToString(sum[:]),
 		})
+		metrics.ScreenshotCaptured(ctx, service)
 	}
 	return out
 }

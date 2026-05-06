@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/netip"
 
+	"github.com/thenickstrick/go-natlas/internal/metrics"
 	"github.com/thenickstrick/go-natlas/internal/protocol"
 	"github.com/thenickstrick/go-natlas/internal/server/data"
 	"github.com/thenickstrick/go-natlas/internal/server/objectstore"
@@ -145,6 +146,7 @@ func (h *Handlers) GetWork(w http.ResponseWriter, r *http.Request) {
 		AgentConfig:  configToWire(cfg),
 		ServicesHash: services.SHA256,
 	}
+	metrics.DispatchCounted(ctx, scanReason)
 	writeJSON(w, http.StatusOK, item)
 }
 

@@ -20,8 +20,14 @@ import (
 	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/thenickstrick/go-natlas/internal/server/data"
 )
+
+var tracer = otel.Tracer("natlas/server/rescan")
 
 // Reaper periodically requeues stuck rescans.
 //
@@ -77,11 +83,23 @@ func (r *Reaper) Run(ctx context.Context) error {
 
 // Reap performs one sweep. Exposed for tests + manual invocations.
 func (r *Reaper) Reap(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "rescan.reap",
+		// The cutoff attribute helps operators correlate "I expected this row
+		// to be reaped — what cutoff did the sweep use?" against the timestamp
+		// in the row.
+	)
+	defer span.End()
+
 	cutoff := time.Now().UTC().Add(-r.threshold)
+	span.SetAttributes(attribute.String("cutoff", cutoff.Format(time.RFC3339Nano)))
+
 	ids, err := r.store.RescanTaskReapStale(ctx, cutoff)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
+	span.SetAttributes(attribute.Int("requeued", len(ids)))
 	if len(ids) > 0 {
 		slog.InfoContext(ctx, "rescan reaper: requeued stale tasks",
 			"count", len(ids), "cutoff", cutoff, "ids", ids)

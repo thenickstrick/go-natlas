@@ -24,6 +24,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/opensearch-project/opensearch-go/v4"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/thenickstrick/go-natlas/internal/config"
 	"github.com/thenickstrick/go-natlas/internal/server/data"
@@ -227,13 +228,17 @@ func resolveScanSeed(hexSeed string) ([]byte, error) {
 }
 
 func (a *App) initOpenSearch(ctx context.Context) error {
+	// otelhttp wraps the OpenSearch client transport so each Perform()
+	// call shows up as a child span under whatever caller span is on the
+	// context (typically an inbound /api/v1/results handler span).
+	osTransport := otelhttp.NewTransport(&http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: a.cfg.OpenSearch.Insecure}, // #nosec G402 — dev override
+	})
 	client, err := opensearch.NewClient(opensearch.Config{
 		Addresses: []string{a.cfg.OpenSearch.URL},
 		Username:  a.cfg.OpenSearch.Username,
 		Password:  a.cfg.OpenSearch.Password,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: a.cfg.OpenSearch.Insecure}, // #nosec G402 — dev override
-		},
+		Transport: osTransport,
 	})
 	if err != nil {
 		return fmt.Errorf("opensearch client: %w", err)

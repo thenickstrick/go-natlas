@@ -12,10 +12,18 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/thenickstrick/go-natlas/internal/agent/screenshots"
 	"github.com/thenickstrick/go-natlas/internal/agent/submit"
+	"github.com/thenickstrick/go-natlas/internal/metrics"
 	"github.com/thenickstrick/go-natlas/internal/protocol"
 )
+
+var tracer = otel.Tracer("natlas/agent/worker")
 
 // Scanner is the subset of *scanner.Scanner that the Pool uses. Kept as an
 // interface so tests can inject stubs without invoking nmap.
@@ -145,6 +153,19 @@ func (p *Pool) worker(ctx context.Context, id int, workCh <-chan *protocol.WorkI
 }
 
 func (p *Pool) executeOne(ctx context.Context, workerID int, work *protocol.WorkItem) {
+	ctx, span := tracer.Start(ctx, "worker.scan",
+		trace.WithAttributes(
+			attribute.Int("worker_id", workerID),
+			attribute.String("scan_id", work.ScanID),
+			attribute.String("target", work.Target),
+			attribute.String("scan_reason", work.ScanReason),
+		),
+	)
+	startedAt := time.Now()
+	defer func() {
+		span.End()
+	}()
+
 	slog.InfoContext(ctx, "agent: scanning",
 		"worker", workerID,
 		"scan_id", work.ScanID,
@@ -156,6 +177,8 @@ func (p *Pool) executeOne(ctx context.Context, workerID int, work *protocol.Work
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			slog.InfoContext(ctx, "agent: scan cancelled (shutdown)", "scan_id", work.ScanID)
+			span.SetStatus(codes.Error, "cancelled")
+			metrics.ScanCompleted(ctx, "cancelled", time.Since(startedAt).Seconds())
 			return
 		}
 		slog.ErrorContext(ctx, "agent: scan failed",
@@ -164,6 +187,9 @@ func (p *Pool) executeOne(ctx context.Context, workerID int, work *protocol.Work
 			"target", work.Target,
 			"err", err,
 		)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		metrics.ScanCompleted(ctx, "failed", time.Since(startedAt).Seconds())
 		return
 	}
 
@@ -206,6 +232,9 @@ func (p *Pool) executeOne(ctx context.Context, workerID int, work *protocol.Work
 			"scan_id", work.ScanID,
 			"err", err,
 		)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		metrics.ScanCompleted(ctx, "submit_failed", time.Since(startedAt).Seconds())
 		return
 	}
 	slog.InfoContext(ctx, "agent: scan submitted",
@@ -216,6 +245,16 @@ func (p *Pool) executeOne(ctx context.Context, workerID int, work *protocol.Work
 		"ports", result.PortCount,
 		"elapsed_s", result.ElapsedS,
 	)
+	span.SetAttributes(
+		attribute.Bool("is_up", result.IsUp),
+		attribute.Int("port_count", result.PortCount),
+		attribute.Int("screenshot_count", len(result.Screenshots)),
+	)
+	status := "ok"
+	if result.TimedOut {
+		status = "timed_out"
+	}
+	metrics.ScanCompleted(ctx, status, time.Since(startedAt).Seconds())
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) error {

@@ -16,8 +16,15 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/thenickstrick/go-natlas/internal/protocol"
 )
+
+var tracer = otel.Tracer("natlas/agent/scanner")
 
 // Scanner is a reusable nmap runner. One Scanner is shared by every worker
 // in the pool; Scan is safe for concurrent use (it writes to per-call temp
@@ -52,6 +59,16 @@ func (s *Scanner) Scan(ctx context.Context, work *protocol.WorkItem) (*protocol.
 	if _, err := netip.ParseAddr(work.Target); err != nil {
 		return nil, fmt.Errorf("scanner: invalid target %q: %w", work.Target, err)
 	}
+
+	ctx, span := tracer.Start(ctx, "scan.nmap",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("scan_id", work.ScanID),
+			attribute.String("target", work.Target),
+			attribute.String("scan_reason", work.ScanReason),
+		),
+	)
+	defer span.End()
 
 	dir, err := os.MkdirTemp(s.WorkDir, "natlas-scan-")
 	if err != nil {
@@ -119,14 +136,24 @@ func (s *Scanner) Scan(ctx context.Context, work *protocol.WorkItem) (*protocol.
 	result.NmapData = string(nmapData)
 	result.GNmapData = string(gnmapData)
 
+	// Outcome attributes for trace introspection.
+	span.SetAttributes(
+		attribute.Bool("is_up", result.IsUp),
+		attribute.Int("port_count", result.PortCount),
+		attribute.Int("elapsed_s", result.ElapsedS),
+	)
+
 	// Map the error outcome.
 	if runErr != nil {
 		if errors.Is(scanCtx.Err(), context.DeadlineExceeded) {
 			result.TimedOut = true
+			span.SetAttributes(attribute.Bool("timed_out", true))
+			span.SetStatus(codes.Error, "scan timed out")
 			return result, nil
 		}
 		if ctx.Err() != nil {
 			// Caller cancelled — propagate so the worker knows to stop.
+			span.SetStatus(codes.Error, "context cancelled")
 			return result, ctx.Err()
 		}
 		// Non-zero exit without timeout. nmap exits non-zero for a few benign
