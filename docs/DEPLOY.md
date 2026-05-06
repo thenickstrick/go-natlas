@@ -35,10 +35,23 @@ make build              # writes ./bin/natlas (+ natlas-server / -agent / -admin
 ./bin/natlas up         # build images + start the dev stack
 ./bin/natlas logs       # tail all services (./bin/natlas logs server for one)
 ./bin/natlas ps         # container state
+./bin/natlas rebuild    # rebuild + recreate server + agent (the inner-loop verb)
+./bin/natlas restart server  # restart only, no rebuild
 ./bin/natlas down       # stop, volumes preserved
 ./bin/natlas nuke       # stop + delete every named volume
-./bin/natlas restart server   # restart one or more services
 ```
+
+The inner-loop edit→run cycle:
+
+```bash
+# you change Go code
+./bin/natlas rebuild server   # rebuilds the server image + recreates the container
+./bin/natlas logs server      # watch the new version come up
+```
+
+`natlas rebuild` differs from `natlas restart` (which is a no-rebuild bounce)
+and from `natlas build` (which produces a new image but doesn't swap the
+running container).
 
 Symlink it onto your `PATH` for the canonical UX:
 

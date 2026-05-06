@@ -27,10 +27,11 @@ agent — see the docs below for the migration path.
 ## Quick start
 
 ```bash
-make build           # produces ./bin/natlas plus the server/agent/admin binaries
-./bin/natlas up      # build images + start the dev stack in the background
-./bin/natlas logs    # tail everything (or `./bin/natlas logs server` for one)
-./bin/natlas down    # stop, volumes preserved
+make build              # produces ./bin/natlas plus the server/agent/admin binaries
+./bin/natlas up         # build images + start the dev stack in the background
+./bin/natlas logs       # tail everything (or `./bin/natlas logs server` for one)
+./bin/natlas rebuild    # rebuild + recreate server + agent after a code change
+./bin/natlas down       # stop, volumes preserved
 ```
 
 Then visit <http://localhost:5001/> — the login page renders a one-shot

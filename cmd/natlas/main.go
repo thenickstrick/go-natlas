@@ -4,12 +4,14 @@
 // to a single short verb:
 //
 //	natlas up                 # build + start the stack
+//	natlas rebuild            # rebuild + recreate server + agent (inner loop)
+//	natlas rebuild server     # rebuild + recreate one service
 //	natlas logs               # tail everything
 //	natlas logs server        # tail one service
 //	natlas ps                 # container state
 //	natlas down               # stop (volumes preserved)
 //	natlas nuke               # stop + delete every named volume
-//	natlas restart server     # restart one service
+//	natlas restart server     # restart one service (no rebuild)
 //	natlas psql               # interactive psql against the dev DB
 //	natlas admin user list    # forward to the in-cluster natlas-admin
 //	natlas admin scope add 10.0.0.0/24
@@ -55,6 +57,7 @@ func newRoot() *cobra.Command {
 		psCmd(),
 		restartCmd(),
 		buildCmd(),
+		rebuildCmd(),
 		psqlCmd(),
 		adminCmd(),
 		versionCmd(),
@@ -145,6 +148,29 @@ func buildCmd() *cobra.Command {
 				args = []string{"server", "agent"}
 			}
 			return docker(composeArgs(append([]string{"build"}, args...)...)...)
+		},
+	}
+}
+
+// rebuildCmd is the inner-loop verb for "I changed Go code, give me the new
+// version running". Combines `--build` (rebuild the image) and
+// `--force-recreate` (recreate the container even when compose config is
+// unchanged) in one shot. Defaults to server + agent — both depend on the
+// repo source — but accepts explicit service names to narrow the rebuild
+// when only one side changed.
+func rebuildCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rebuild [service...]",
+		Short: "Rebuild images and recreate containers (default: server + agent)",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				args = []string{"server", "agent"}
+			}
+			return docker(composeArgs(append(
+				[]string{"up", "-d", "--build", "--force-recreate"},
+				args...,
+			)...)...)
 		},
 	}
 }
