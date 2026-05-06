@@ -14,7 +14,11 @@ help:
 all: build ## Build every binary
 
 .PHONY: build
-build: $(BIN)/natlas-server $(BIN)/natlas-agent $(BIN)/natlas-admin ## Build every binary
+build: $(BIN)/natlas $(BIN)/natlas-server $(BIN)/natlas-agent $(BIN)/natlas-admin ## Build every binary
+
+$(BIN)/natlas: $(shell find cmd/natlas -name '*.go') go.mod go.sum
+	@mkdir -p $(BIN)
+	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./cmd/natlas
 
 $(BIN)/natlas-server: $(shell find cmd/natlas-server internal -name '*.go') go.mod go.sum
 	@mkdir -p $(BIN)

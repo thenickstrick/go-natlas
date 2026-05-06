@@ -13,9 +13,10 @@ agent — see the docs below for the migration path.
 
 ## Components
 
+- `cmd/natlas` — operator entry point that wraps `docker compose` lifecycle and proxies into the in-cluster admin CLI (`natlas up`, `natlas admin user create ...`).
 - `cmd/natlas-server` — HTTP control plane, web UI, agent dispatch, result indexing.
 - `cmd/natlas-agent` — polls the server, runs nmap, captures screenshots.
-- `cmd/natlas-admin` — operator CLI (users, agents, scope, services, migrate-from-py).
+- `cmd/natlas-admin` — operator CLI (users, agents, scope, services, migrate-from-py). Bundled inside the server image; you usually invoke it via `natlas admin ...`.
 
 ## Documentation
 
@@ -26,9 +27,10 @@ agent — see the docs below for the migration path.
 ## Quick start
 
 ```bash
-make up        # docker compose up -d --build (Postgres, OpenSearch, Garage, Jaeger, OTel Col, MailDev, server, agent)
-make logs      # tail the stack
-make down      # stop
+make build           # produces ./bin/natlas plus the server/agent/admin binaries
+./bin/natlas up      # build images + start the dev stack in the background
+./bin/natlas logs    # tail everything (or `./bin/natlas logs server` for one)
+./bin/natlas down    # stop, volumes preserved
 ```
 
 Then visit <http://localhost:5001/> — the login page renders a one-shot
@@ -36,10 +38,19 @@ Then visit <http://localhost:5001/> — the login page renders a one-shot
 **Scope** for a no-network-touch demo, then watch the agent log scans and
 the trace appear in Jaeger at <http://localhost:16686/>.
 
-The bundled `natlas-admin` CLI ships in the server image:
+The `natlas` binary also proxies into the in-cluster admin CLI without a
+local Go toolchain:
 
 ```bash
-docker compose -f deploy/docker-compose.yml exec server /natlas-admin user list
+./bin/natlas admin user create --admin you@example.com
+./bin/natlas admin scope add 10.0.0.0/24
+./bin/natlas admin agent list
+```
+
+Symlink it onto your `PATH` for the canonical `natlas up` UX:
+
+```bash
+ln -s "$(pwd)/bin/natlas" /usr/local/bin/natlas
 ```
 
 ## Development

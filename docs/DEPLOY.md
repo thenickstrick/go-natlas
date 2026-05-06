@@ -28,15 +28,28 @@ configuration — credentials are baked in.
 
 ## Quick start (development)
 
-From the repo root:
+Build the operator CLI once, then drive everything through `natlas`:
 
 ```bash
-make up        # docker compose up -d --build
-make logs      # tail server + agent + backends
-make ps        # see container state
-make down      # stop the stack
-make nuke      # stop + delete every named volume
+make build              # writes ./bin/natlas (+ natlas-server / -agent / -admin)
+./bin/natlas up         # build images + start the dev stack
+./bin/natlas logs       # tail all services (./bin/natlas logs server for one)
+./bin/natlas ps         # container state
+./bin/natlas down       # stop, volumes preserved
+./bin/natlas nuke       # stop + delete every named volume
+./bin/natlas restart server   # restart one or more services
 ```
+
+Symlink it onto your `PATH` for the canonical UX:
+
+```bash
+ln -s "$(pwd)/bin/natlas" /usr/local/bin/natlas
+natlas up
+```
+
+The Makefile keeps `make up` / `make down` / `make logs` / `make ps` / `make nuke`
+as aliases for operators who'd rather not build a binary first; both paths
+are equivalent.
 
 Wait for the OpenSearch container to settle (it takes ~20s on first start),
 then point a browser at <http://localhost:5001/>. The login page will detect
@@ -59,21 +72,27 @@ After the first user lands you can:
 
 ## Running natlas-admin against the dev stack
 
-The server image bundles `natlas-admin` so admin subcommands run inside the
-cluster network without building Go locally:
+`natlas admin <args>` proxies into the in-cluster `natlas-admin` binary
+that ships in the server image. No local Go toolchain or published Postgres
+port required:
 
 ```bash
-docker compose -f deploy/docker-compose.yml exec server \
-  /natlas-admin user list
-
-docker compose -f deploy/docker-compose.yml exec server \
-  /natlas-admin agent create --name primary admin@example.com
+natlas admin user list
+natlas admin user create --admin admin@example.com
+natlas admin agent create --name primary admin@example.com
+natlas admin scope add 10.0.0.0/24
+natlas admin scope blacklist 10.0.0.5/32
+natlas admin services upload ./services.txt
 ```
 
-The container already has `POSTGRES_URL` set, so admin commands target the
+The container already has `POSTGRES_URL` set so admin commands target the
 same database the server is using. For ad-hoc CLI use against a different
-database (e.g. running `migrate-from-py`), build locally with `make build`
-and set `POSTGRES_URL` (or `SQLITE_PATH`) in your shell.
+database (e.g. running `migrate-from-py` against an external Python natlas
+deployment), build locally with `make build` and run `./bin/natlas-admin`
+directly with `POSTGRES_URL` (or `SQLITE_PATH`) in your shell.
+
+There's also a convenience `natlas psql` that drops you into an interactive
+psql shell against the dev DB.
 
 ## Building from source
 
