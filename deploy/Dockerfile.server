@@ -15,10 +15,18 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build \
         -trimpath \
         -ldflags "-s -w -X main.Version=${VERSION}" \
-        -o /out/natlas-server ./cmd/natlas-server
+        -o /out/natlas-server ./cmd/natlas-server && \
+    CGO_ENABLED=0 GOOS=linux go build \
+        -trimpath \
+        -ldflags "-s -w -X main.Version=${VERSION}" \
+        -o /out/natlas-admin ./cmd/natlas-admin
 
+# natlas-admin is shipped alongside natlas-server so operators can run admin
+# subcommands inside the cluster without standing up a separate image:
+#   docker compose exec server /natlas-admin user create --admin you@example.com
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/natlas-server /natlas-server
+COPY --from=build /out/natlas-admin /natlas-admin
 EXPOSE 5001
 USER nonroot:nonroot
 ENTRYPOINT ["/natlas-server"]

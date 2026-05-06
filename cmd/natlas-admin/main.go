@@ -31,7 +31,11 @@ var Version = "dev"
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
-		// Cobra already printed the error; just exit non-zero.
+		// We set SilenceErrors on the root so cobra doesn't double-print
+		// once slog is initialized; print here to cover the early case where
+		// PersistentPreRunE itself fails (e.g. missing POSTGRES_URL/SQLITE_PATH)
+		// before slog has been wired.
+		fmt.Fprintf(os.Stderr, "natlas-admin: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -116,6 +120,10 @@ func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the natlas-admin version",
+		// Override the parent's PersistentPreRunE so `natlas-admin version`
+		// works even when the env has no DB configured. The parent's hook
+		// loads admin config; version doesn't need it.
+		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
 		Run: func(cmd *cobra.Command, _ []string) {
 			fmt.Fprintf(cmd.OutOrStdout(), "natlas-admin %s\n", Version)
 		},

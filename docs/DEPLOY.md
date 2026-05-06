@@ -42,10 +42,38 @@ Wait for the OpenSearch container to settle (it takes ~20s on first start),
 then point a browser at <http://localhost:5001/>. The login page will detect
 that no users exist and offer a one-shot first-launch admin creation form.
 
+The bundled compose intentionally sets `AGENT_AUTH_REQUIRED=false` on the
+server so the bundled agent connects without an operator first running
+`natlas-admin agent create`. **Production deployments must leave that
+default in place** (it defaults to `true`) and provision agents via the
+CLI — see *Bootstrapping an agent* below.
+
 After the first user lands you can:
 
 - Add scope rows from `/admin/scope` (the in-memory dispatcher hot-reloads).
-- Register a scan agent from the CLI (see *Bootstrapping an agent* below).
+  Try `127.0.0.1/32` for a no-network-touch demo; the agent scans loopback
+  once per cycle.
+- Watch the agent's logs (`make logs`) pick up work within a poll cycle.
+- Visit Jaeger at <http://localhost:16686/> and pick `natlas-server` or
+  `natlas-agent` to see the per-scan trace.
+
+## Running natlas-admin against the dev stack
+
+The server image bundles `natlas-admin` so admin subcommands run inside the
+cluster network without building Go locally:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec server \
+  /natlas-admin user list
+
+docker compose -f deploy/docker-compose.yml exec server \
+  /natlas-admin agent create --name primary admin@example.com
+```
+
+The container already has `POSTGRES_URL` set, so admin commands target the
+same database the server is using. For ad-hoc CLI use against a different
+database (e.g. running `migrate-from-py`), build locally with `make build`
+and set `POSTGRES_URL` (or `SQLITE_PATH`) in your shell.
 
 ## Building from source
 

@@ -32,7 +32,15 @@ make down      # stop
 ```
 
 Then visit <http://localhost:5001/> — the login page renders a one-shot
-"create initial admin" form on first launch.
+"create initial admin" form on first launch. Add `127.0.0.1/32` under
+**Scope** for a no-network-touch demo, then watch the agent log scans and
+the trace appear in Jaeger at <http://localhost:16686/>.
+
+The bundled `natlas-admin` CLI ships in the server image:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec server /natlas-admin user list
+```
 
 ## Development
 

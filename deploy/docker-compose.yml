@@ -58,15 +58,17 @@ services:
       - "3902:3902"   # Admin API
     networks: [backend]
 
-  # One-shot: creates the cluster layout, bucket, and a deterministic access key.
+  # One-shot: creates the cluster layout, bucket, and a deterministic access
+  # key via Garage's admin HTTP API. Runs in plain alpine because Garage's
+  # own image is FROM scratch (no shell) and curlimages/curl runs unprivileged
+  # (no apk add for jq).
   # Fixed dev credentials — NEVER reuse for production.
   garage-init:
-    image: dxflrs/garage:v1.0.1
+    image: alpine:3.20
     depends_on:
       - garage
     restart: "no"
     volumes:
-      - ./garage.toml:/etc/garage.toml:ro
       - ./init-garage.sh:/init-garage.sh:ro
     entrypoint: ["/bin/sh", "/init-garage.sh"]
     networks: [backend]
@@ -105,6 +107,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.server
+    restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
       opensearch: { condition: service_healthy }
@@ -122,8 +125,11 @@ services:
       - OPENSEARCH_PASSWORD=Natlas-Dev-Password-1!
       - S3_ENDPOINT=garage:3900
       - S3_BUCKET=natlas-screenshots
-      - S3_ACCESS_KEY=GKnatlas00000000000000000000dev01
-      - S3_SECRET_KEY=natlas0000000000000000000000000000000000000000000000000000dev01
+      # Match the deterministic creds imported by deploy/init-garage.sh.
+      # Garage v1 requires GK + 24 hex chars for the access key, 64 hex for
+      # the secret. These are dev-only values; rotate before any production use.
+      - S3_ACCESS_KEY=GKa1b2c3d4e5f6a1b2c3d4e5f6
+      - S3_SECRET_KEY=a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
       - S3_REGION=garage
       - S3_USE_TLS=false
       - SMTP_HOST=maildev
@@ -135,6 +141,12 @@ services:
       - OTEL_ENABLED=true
       - OTEL_EXPORTER_OTLP_ENDPOINT=otel:4317
       - OTEL_EXPORTER_OTLP_INSECURE=true
+      # AGENT_AUTH_REQUIRED gates the /api/v1/* bearer-auth middleware.
+      # Off here so the bundled `agent` service can scan without an
+      # operator first running `natlas-admin agent create`. PRODUCTION
+      # deployments must leave this unset (defaults to true) and provision
+      # agents through the CLI.
+      - AGENT_AUTH_REQUIRED=false
     ports:
       - "5001:5001"
     networks: [backend]
@@ -143,6 +155,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.agent
+    restart: unless-stopped
     depends_on:
       server: { condition: service_started }
     environment:
