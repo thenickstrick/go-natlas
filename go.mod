@@ -12,6 +12,7 @@ require (
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/minio/minio-go/v7 v7.0.100
 	github.com/opensearch-project/opensearch-go/v4 v4.6.0
+	github.com/spf13/cobra v1.10.2
 	github.com/testcontainers/testcontainers-go v0.42.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
@@ -21,6 +22,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	golang.org/x/crypto v0.49.0
+	golang.org/x/term v0.41.0
 	modernc.org/sqlite v1.49.1
 )
 
@@ -56,6 +58,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -87,6 +90,7 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/tinylib/msgp v1.6.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect

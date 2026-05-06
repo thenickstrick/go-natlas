@@ -1,45 +1,122 @@
-// natlas-admin is the operator CLI for the natlas control plane. It subsumes
-// the scattered Flask CLI + shell helpers of the Python deployment.
+// natlas-admin is the operator CLI for the natlas control plane: user and
+// agent provisioning, scope CRUD + bulk import/export, and uploading the
+// custom nmap services database.
 //
-// Phase 1 stub: only `version` is implemented; all other subcommands are wired
-// in later phases (user/agent/scope/services/migrate-from-py).
+// Configuration: env-driven, identical to natlas-server's DB envvars
+// (POSTGRES_URL or SQLITE_PATH). The CLI does not touch OpenSearch, the
+// object store, or sessions.
+//
+// Caveat: scope mutations made via this CLI are not picked up by a running
+// natlas-server until restart — the in-memory ScopeManager loads at boot.
+// Use the web /admin/scope page for hot updates; use this CLI for batch
+// imports and automation.
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/thenickstrick/go-natlas/internal/config"
+	"github.com/thenickstrick/go-natlas/internal/server/data"
+	"github.com/thenickstrick/go-natlas/internal/telemetry"
 )
 
+// Version is set via -ldflags at build time.
 var Version = "dev"
 
 func main() {
-	if len(os.Args) < 2 {
-		usage(os.Stderr)
-		os.Exit(2)
-	}
-	switch os.Args[1] {
-	case "version", "--version", "-v":
-		fmt.Printf("natlas-admin %s\n", Version)
-	case "help", "--help", "-h":
-		usage(os.Stdout)
-	default:
-		fmt.Fprintf(os.Stderr, "natlas-admin: unknown subcommand %q\n\n", os.Args[1])
-		usage(os.Stderr)
-		os.Exit(2)
+	if err := newRootCmd().Execute(); err != nil {
+		// Cobra already printed the error; just exit non-zero.
+		os.Exit(1)
 	}
 }
 
-func usage(w *os.File) {
-	fmt.Fprintln(w, `natlas-admin — operator CLI for the natlas control plane
+// adminEnv is the dependency handle every subcommand reuses. Lazily
+// constructed by openStore when the subcommand actually needs DB access.
+type adminEnv struct {
+	cfg   *config.Admin
+	store data.Store
+}
 
-Usage:
-  natlas-admin <command> [flags]
+// openStore connects to the configured backend on first use and caches the
+// handle for the lifetime of the command. Callers are expected to defer
+// e.close().
+func (e *adminEnv) openStore(ctx context.Context) (data.Store, error) {
+	if e.store != nil {
+		return e.store, nil
+	}
+	var (
+		store data.Store
+		err   error
+	)
+	switch e.cfg.Dialect() {
+	case "postgres":
+		store, err = data.NewPostgresStore(ctx, e.cfg.Postgres.URL)
+	case "sqlite":
+		store, err = data.NewSQLiteStore(ctx, e.cfg.SQLite.Path)
+	default:
+		return nil, errors.New("no database configured")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open store: %w", err)
+	}
+	e.store = store
+	return store, nil
+}
 
-Commands (planned):
-  user      create|invite|promote|delete
-  agent     create|rotate-token|rename|delete
-  scope     import|export|add|remove|blacklist
-  services  upload <file>
-  migrate-from-py --pg-url ... --os-url ... --out-pg ... --out-os ...
-  version`)
+func (e *adminEnv) close() {
+	if e.store != nil {
+		e.store.Close()
+		e.store = nil
+	}
+}
+
+func newRootCmd() *cobra.Command {
+	env := &adminEnv{}
+
+	root := &cobra.Command{
+		Use:           "natlas-admin",
+		Short:         "Operator CLI for the natlas control plane",
+		SilenceUsage:  true, // Don't dump usage on every runtime error.
+		SilenceErrors: true, // We print our own errors via slog.
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := config.LoadAdmin()
+			if err != nil {
+				return err
+			}
+			env.cfg = cfg
+			slog.SetDefault(telemetry.NewLogger(cfg.LogLevel, cfg.LogFormat))
+			return nil
+		},
+		PersistentPostRun: func(_ *cobra.Command, _ []string) {
+			env.close()
+		},
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+
+	root.AddCommand(
+		newVersionCmd(),
+		newUserCmd(env),
+		newAgentCmd(env),
+		newScopeCmd(env),
+		newServicesCmd(env),
+	)
+	return root
+}
+
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the natlas-admin version",
+		Run: func(cmd *cobra.Command, _ []string) {
+			fmt.Fprintf(cmd.OutOrStdout(), "natlas-admin %s\n", Version)
+		},
+	}
 }

@@ -122,6 +122,39 @@ func LoadServer() (*Server, error) {
 	return &s, nil
 }
 
+// Admin is the trimmed configuration the natlas-admin CLI needs. It loads the
+// same DB env vars as Server but skips SECRET_KEY/OPENSEARCH/S3/SMTP
+// validation — those are server-side concerns the CLI doesn't touch.
+type Admin struct {
+	Postgres  Postgres
+	SQLite    SQLite
+	LogLevel  string `envconfig:"LOG_LEVEL" default:"info"`
+	LogFormat string `envconfig:"LOG_FORMAT" default:"text"`
+}
+
+// Dialect mirrors Server.Dialect.
+func (a *Admin) Dialect() string {
+	if a.Postgres.URL != "" {
+		return "postgres"
+	}
+	return "sqlite"
+}
+
+// LoadAdmin reads the environment and validates the DB-only subset.
+func LoadAdmin() (*Admin, error) {
+	var a Admin
+	if err := envconfig.Process("", &a); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	if a.Postgres.URL == "" && a.SQLite.Path == "" {
+		return nil, errors.New("invalid configuration:\n  - one of POSTGRES_URL or SQLITE_PATH must be set")
+	}
+	if a.Postgres.URL != "" && a.SQLite.Path != "" {
+		return nil, errors.New("invalid configuration:\n  - POSTGRES_URL and SQLITE_PATH are mutually exclusive")
+	}
+	return &a, nil
+}
+
 // LoadAgent reads the environment, applies defaults, and validates.
 func LoadAgent() (*Agent, error) {
 	var a Agent
