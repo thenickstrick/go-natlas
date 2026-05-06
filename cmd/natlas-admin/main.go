@@ -107,6 +107,7 @@ func newRootCmd() *cobra.Command {
 		newAgentCmd(env),
 		newScopeCmd(env),
 		newServicesCmd(env),
+		newMigrateCmd(env),
 	)
 	return root
 }
