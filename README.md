@@ -56,7 +56,7 @@ ln -s "$(pwd)/bin/natlas" /usr/local/bin/natlas
 
 ## Development
 
-Requires Go 1.26.2.
+Requires Go 1.26.3.
 
 ```bash
 make build              # bin/natlas-server, bin/natlas-agent, bin/natlas-admin

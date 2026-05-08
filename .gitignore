@@ -28,3 +28,9 @@ deploy/.env
 
 # Node bits in case someone runs the SCSS build locally
 /node_modules/
+
+# Local working notes — keep out of the repo. Each contributor maintains
+# their own; if you want a real backlog, file a GitHub issue instead.
+/todos.md
+/TODO.md
+/NOTES.md

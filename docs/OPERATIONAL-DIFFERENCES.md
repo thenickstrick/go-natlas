@@ -8,7 +8,7 @@ for cutover instructions see [MIGRATION-FROM-PY.md](MIGRATION-FROM-PY.md).
 
 | Concern              | Python natlas                          | go-natlas                                              |
 |----------------------|----------------------------------------|--------------------------------------------------------|
-| Language             | Python 3.12 (Flask + SQLAlchemy)       | Go 1.26.2                                              |
+| Language             | Python 3.12 (Flask + SQLAlchemy)       | Go 1.26.3                                              |
 | Search/index         | Elasticsearch 7.17                     | OpenSearch 3.6                                         |
 | Object store         | MinIO                                  | Garage v1 (any S3-compatible still works)              |
 | Tracing UI           | Zipkin (via OTel Collector)            | Jaeger v2 (OTLP-native; Collector forwards to it)      |

@@ -109,7 +109,7 @@ psql shell against the dev DB.
 
 ## Building from source
 
-The repo expects Go 1.26.2.
+The repo expects Go 1.26.3.
 
 ```bash
 make build           # writes ./bin/natlas-server, ./bin/natlas-agent, ./bin/natlas-admin
