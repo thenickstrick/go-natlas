@@ -19,7 +19,7 @@ for cutover instructions see [MIGRATION-FROM-PY.md](MIGRATION-FROM-PY.md).
 | Web framework        | Flask 2.x                              | chi + scs sessions + gorilla/csrf                      |
 | Sessions             | Flask sessions                         | scs (in-memory today; PG/SQLite store is a swap)       |
 | Agent runtime        | Python threads + requests              | Goroutine pool + `net/http` with backoff              |
-| Screenshots          | aquatone + xvfb + vncsnapshot          | chromedp (web) — VNC deferred to a follow-up           |
+| Screenshots          | aquatone + xvfb + vncsnapshot          | chromedp (web) + pure-Go RFB 3.8 (VNC)                 |
 | nmap output parsing  | `natlas-libnmap` fork                  | stdlib `encoding/xml` over the nmap-dtd subset we use  |
 
 ## Deployment shape
@@ -107,9 +107,6 @@ compatible.
 These were called out in the plan as "later" and are not present in the
 current deployment:
 
-- **VNC screenshots** — the orchestrator dispatches VNC ports if a VNC
-  capturer is registered, but the pure-Go RFB transport itself is a
-  follow-up.
 - **User invite + password reset email flow** — the `user_invitations`
   table exists, but the SMTP-driven invite-and-reset round trip isn't
   wired into the web UI yet.

@@ -14,6 +14,7 @@ import (
 
 	"github.com/thenickstrick/go-natlas/internal/agent/scanner"
 	"github.com/thenickstrick/go-natlas/internal/agent/screenshots"
+	vncshots "github.com/thenickstrick/go-natlas/internal/agent/screenshots/vnc"
 	webshots "github.com/thenickstrick/go-natlas/internal/agent/screenshots/web"
 	"github.com/thenickstrick/go-natlas/internal/agent/submit"
 	"github.com/thenickstrick/go-natlas/internal/agent/worker"
@@ -74,19 +75,35 @@ func run() int {
 
 	sc := scanner.New("" /* nmap from PATH */, "" /* no custom services yet */, cfg.DataDir)
 
-	// Optional screenshot orchestrator. The web transport is bootstrapped
-	// lazily on first capture, so disabling it here costs nothing and
-	// keeps the no-Chrome path fast.
+	// Optional screenshot orchestrator. Each transport is constructed
+	// independently so an operator can enable VNC without paying for
+	// Chrome (or vice versa). The web transport bootstraps Chrome
+	// lazily on first capture; VNC has no warm-up cost.
 	var ss worker.Screenshotter
+	var orch *screenshots.Orchestrator
 	if cfg.WebScreenshotsEnabled {
 		web := webshots.New(webshots.Options{
 			ChromePath:     cfg.ChromePath,
 			CaptureTimeout: cfg.WebScreenshotTimeout,
 		})
 		defer web.Close()
-		ss = &screenshots.Orchestrator{Web: web}
+		orch = &screenshots.Orchestrator{Web: web}
 		slog.InfoContext(ctx, "agent: web screenshots enabled",
 			"chrome_path", cfg.ChromePath, "timeout", cfg.WebScreenshotTimeout)
+	}
+	if cfg.VNCScreenshotsEnabled {
+		vnc := vncshots.New(vncshots.Options{
+			CaptureTimeout: cfg.VNCScreenshotTimeout,
+		})
+		if orch == nil {
+			orch = &screenshots.Orchestrator{}
+		}
+		orch.VNC = vnc
+		slog.InfoContext(ctx, "agent: vnc screenshots enabled",
+			"timeout", cfg.VNCScreenshotTimeout)
+	}
+	if orch != nil {
+		ss = orch
 	}
 
 	pool := worker.NewWithScreenshots(worker.Config{

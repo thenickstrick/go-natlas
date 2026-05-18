@@ -103,9 +103,15 @@ type Agent struct {
 	// (web/vncScreenshots flags + timeouts) ultimately gates *whether* a
 	// given scan gets shot; these settings configure the agent-side
 	// transports that do the work when it is.
-	WebScreenshotsEnabled  bool          `envconfig:"NATLAS_WEB_SCREENSHOTS" default:"true"`
-	WebScreenshotTimeout   time.Duration `envconfig:"NATLAS_WEB_SCREENSHOT_TIMEOUT" default:"60s"`
-	ChromePath             string        `envconfig:"CHROMEDP_PATH"`
+	WebScreenshotsEnabled bool          `envconfig:"NATLAS_WEB_SCREENSHOTS" default:"true"`
+	WebScreenshotTimeout  time.Duration `envconfig:"NATLAS_WEB_SCREENSHOT_TIMEOUT" default:"60s"`
+	ChromePath            string        `envconfig:"CHROMEDP_PATH"`
+
+	// VNC capture is pure-Go (RFB 3.8 over TCP, no external tooling). The
+	// transport refuses VNC servers that don't offer the "None" security
+	// type — we don't ship password / VeNCrypt handling.
+	VNCScreenshotsEnabled bool          `envconfig:"NATLAS_VNC_SCREENSHOTS" default:"true"`
+	VNCScreenshotTimeout  time.Duration `envconfig:"NATLAS_VNC_SCREENSHOT_TIMEOUT" default:"15s"`
 
 	OTel OTel
 }
